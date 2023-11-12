@@ -48,8 +48,8 @@ inline constexpr struct in_place_t {} in_place{};
 /** Disengaged state indicator **/
 struct nullopt_t
 {
-  struct init{};
-  constexpr nullopt_t(init){};
+    struct init{};
+    constexpr nullopt_t(init){};
 };
 
 inline constexpr nullopt_t nullopt{nullopt_t::init{}};
@@ -694,7 +694,7 @@ namespace std
     {
     public:
         using result_type   = typename hash<T>::result_type;
-        using argument_type = optional<T>;
+        using argument_type = ::optional<T>;
     
     public:    
         constexpr auto operator()(argument_type const& arg) const -> result_type
@@ -707,7 +707,7 @@ namespace std
     struct hash<::optional<T&>>
     {
         using result_type   = typename hash<T>::result_type;
-        using argument_type = optional<T&>;
+        using argument_type = ::optional<T&>;
         
         constexpr auto operator()(argument_type const& arg) const -> result_type
         {

@@ -6,19 +6,19 @@
 class point
 {
 public:
-    constexpr point(float x, float y, float z) noexcept
+    point(float x, float y, float z) noexcept
         : m_x(x) ,m_y(y) ,m_z(z)
     {
         std::cout << "POINT(float, float, float)\xa";
     }
 
-    constexpr point(point const& rhs) noexcept
+    point(point const& rhs) noexcept
         : m_x(rhs.m_x) ,m_y(rhs.m_y) ,m_z(rhs.m_z)
     {
         std::cout << "POINT( point const& )\xa";
     }
 
-    constexpr point(point&& rhs) noexcept
+    point(point&& rhs) noexcept
         : m_x( std::exchange(rhs.m_x, 0.0f) )
         , m_y( std::exchange(rhs.m_y, 0.0f) )
         , m_z( std::exchange(rhs.m_z, 0.0f) )
@@ -26,7 +26,7 @@ public:
         std::cout << "POINT( point&& )\xa";
     }
 
-    constexpr ~point() noexcept = default;
+    ~point() noexcept = default;
 
 private:
     float m_x, m_y, m_z;
