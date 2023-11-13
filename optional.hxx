@@ -85,15 +85,9 @@ public: /** Access the contained value **/
     constexpr auto operator*()       noexcept -> reference       { return m_value; }
 
 
-    constexpr auto operator->() const noexcept -> const_pointer
-    {
-        return std::addressof(m_value);
-    }
+    constexpr auto operator->() const noexcept -> const_pointer { return std::addressof(m_value); }
 
-    constexpr auto operator->() noexcept -> pointer
-    {
-        return std::addressof(m_value);
-    }
+    constexpr auto operator->() noexcept -> pointer { return std::addressof(m_value); }
 
 public: /** destructors **/
     constexpr ~storage_t() noexcept
@@ -256,15 +250,9 @@ public: /** assignment **/
 
 
 public: /** Access contained value **/
-    auto operator->() const noexcept -> const_pointer
-    {
-        return storage_t<T>::operator->();
-    }
+    auto operator->() const noexcept -> const_pointer { return storage_t<T>::operator->(); }
     
-    auto operator->() noexcept -> pointer
-    {
-        return storage_t<T>::operator->();
-    }
+    auto operator->() noexcept -> pointer { return storage_t<T>::operator->(); }
 
 
     auto operator*() const noexcept -> const_reference { return *m_store; }
@@ -281,14 +269,12 @@ public: /** checks whether the object contains a value **/
 public: /** Observer the contained value **/
     auto value() const -> const_reference
     {
-        return bool(*this)  ? *m_store
-                            : throw bad_optional_access{"no value engaged!"};
+        return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
     }
 
     auto value() 
     {
-        return bool(*this)  ? *m_store
-                            : throw bad_optional_access{"no value engaged!"};
+        return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
     }
 
     template <typename U>
@@ -442,13 +428,11 @@ public: /** Access the contained value **/
 public: /** Observer the contained value **/
     auto value() const -> const_reference
     {
-        return bool(*this)  ? *m_reference 
-                            : throw bad_optional_access{"no value engaged!"};
+        return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
     }
     auto value() -> reference
     {
-        return bool(*this)  ? *m_reference
-                            : throw bad_optional_access{"no value engaged!"};
+        return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
     }
 
     template <typename U>
