@@ -66,34 +66,25 @@ public: /** type alias **/
     using const_value_type = typename std::add_const<T>::type;
     using reference        = typename std::add_lvalue_reference<T>::type;
     using const_reference  = typename std::add_lvalue_reference<const_value_type>::type;
-    using pointer          = typename std::add_pointer<T>::type;
-    using const_pointer    = typename std::add_pointer<const_value_type>::type;
 
 
 public: /** constructors **/
     constexpr storage_t(trivial_init_t) noexcept : m_dummy() {}
     
     template <typename ...ARGS>
-    constexpr storage_t(ARGS&& ...args) noexcept requires( std::constructible_from<T, ARGS...>)
+    constexpr storage_t(ARGS&& ...args) requires( std::constructible_from<T, ARGS...>)
         : m_value(std::forward<ARGS>(args)...)
     {}
 
 
 public: /** Access the contained value **/
-    constexpr auto operator*() const noexcept -> const_reference { return m_value; }
-    
-    constexpr auto operator*()       noexcept -> reference       { return m_value; }
-
-
-    constexpr auto operator->() const noexcept -> const_pointer { return std::addressof(m_value); }
-
-    constexpr auto operator->() noexcept -> pointer { return std::addressof(m_value); }
+    constexpr auto operator*() const -> const_reference { return m_value; }
+    constexpr auto operator*()       -> reference       { return m_value; }
 
 public: /** destructors **/
-    constexpr ~storage_t() noexcept
-                    requires( std::trivially_destructible<T> ) = default;
+    constexpr ~storage_t() requires( std::trivially_destructible<T> ) = default;
     
-    ~storage_t() noexcept requires( not std::trivially_destructible<T> ) {}
+    ~storage_t() requires( not std::trivially_destructible<T> ) {}
 
 private:
     std::byte m_dummy;
@@ -128,21 +119,21 @@ public: /** constructors **/
         , m_store(value)
     {}
 
-    constexpr optional(T&& value) noexcept requires( std::move_constructible<T> )
+    constexpr optional(T&& value) requires( std::move_constructible<T> )
         : m_engaged(true)
         , m_store(std::move(value))
     {}
 
     template <typename ...ARGS>
-    constexpr optional(in_place_t, ARGS&& ...args) noexcept
+    constexpr optional(in_place_t, ARGS&& ...args)
         : m_engaged(true)
         , m_store(std::forward<ARGS>(args)...)
     {}
 
-    constexpr optional(optional const&) noexcept 
+    constexpr optional(optional const&) 
         requires( std::copy_constructible<T> && std::trivially_copy_constructible<T> ) = default;
 
-    constexpr optional(optional const& rhs) noexcept 
+    constexpr optional(optional const& rhs) 
         requires( std::copy_constructible<T> && not std::trivially_copy_constructible<T> )
     {
         if ( rhs.m_engaged )
@@ -153,10 +144,10 @@ public: /** constructors **/
         }
     }
 
-    constexpr optional(optional&&) noexcept
+    constexpr optional(optional&&)
         requires( std::move_constructible<T> && std::trivially_move_constructible<T> ) = default;
     
-    constexpr optional(optional&& rhs) noexcept
+    constexpr optional(optional&& rhs)
         requires( std::move_constructible<T> && not std::trivially_move_constructible<T> )
     {
         if ( rhs.m_engaged )
@@ -168,10 +159,10 @@ public: /** constructors **/
     }
         
 public: /** assignment **/
-    constexpr auto operator=(optional const&) noexcept -> optional &
+    constexpr auto operator=(optional const&) -> optional &
         requires( std::is_copy_assignable_v<T> && std::trivially_copy_assignable<T> ) = default;
     
-    constexpr auto operator=(optional const& rhs) noexcept -> optional &
+    constexpr auto operator=(optional const& rhs)  -> optional &
         requires( std::is_copy_assignable_v<T> && not std::trivially_copy_assignable<T> )
     {
         if ( rhs.m_engaged )
@@ -197,10 +188,10 @@ public: /** assignment **/
         return *this;
     }
 
-    constexpr auto operator=(optional&&) noexcept -> optional &
+    constexpr auto operator=(optional&&) -> optional &
         requires( std::is_move_assignable_v<T> && std::trivially_move_assignable<T> ) = default;
     
-    constexpr auto operator=(optional&& rhs) noexcept -> optional &
+    constexpr auto operator=(optional&& rhs) -> optional &
         requires( std::is_move_assignable_v<T> && not std::trivially_move_assignable<T> )
     {
         if ( rhs.m_engaged )
@@ -227,8 +218,7 @@ public: /** assignment **/
     }
 
     template <typename U>
-    constexpr auto operator=(U&& value) noexcept -> optional &
-        requires( std::assignable_from<U, T> )
+    constexpr auto operator=(U&& value) -> optional& requires( std::assignable_from<U, T> )
     {
         if ( m_engaged )
         {
@@ -241,7 +231,7 @@ public: /** assignment **/
         return *this;
     }
 
-    constexpr auto operator=(nullopt_t) noexcept -> optional &
+    constexpr auto operator=(nullopt_t) -> optional &
     {
         reset();
 
@@ -250,20 +240,18 @@ public: /** assignment **/
 
 
 public: /** Access contained value **/
-    auto operator->() const noexcept -> const_pointer { return storage_t<T>::operator->(); }
-    
-    auto operator->() noexcept -> pointer { return storage_t<T>::operator->(); }
+    auto operator->() const -> const_pointer { return std::addressof(*m_store); }
+    auto operator->()       -> pointer       { return std::addressof(*m_store); }
 
 
-    auto operator*() const noexcept -> const_reference { return *m_store; }
-    
-    auto operator*()       noexcept -> reference       { return *m_store; }
+    auto operator*() const -> const_reference { return *m_store; }
+    auto operator*()       -> reference       { return *m_store; }
 
 
 public: /** checks whether the object contains a value **/
-    constexpr auto has_value() const noexcept -> bool { return m_engaged; }
+    constexpr auto has_value() const -> bool { return m_engaged; }
     
-    constexpr operator bool()  const noexcept         { return m_engaged; }
+    constexpr operator bool()  const { return m_engaged; }
 
 
 public: /** Observer the contained value **/
@@ -278,15 +266,13 @@ public: /** Observer the contained value **/
     }
 
     template <typename U>
-    auto value_or(U&& value) const& noexcept -> value_type
-        requires( std::convertible_to<U, T> )
+    auto value_or(U&& value) const& -> value_type requires( std::convertible_to<U, T> )
     {
         return bool(*this) ? *m_store : static_cast<T>(std::forward<U>(value));
     }
 
     template <typename U>
-    auto value_or(U&& value) && noexcept -> value_type
-        requires( std::convertible_to<U, T> )
+    auto value_or(U&& value) && -> value_type requires( std::convertible_to<U, T> )
     {
         return bool(*this)  ? std::move( *static_cast<optional&>(*this).m_store)
                             : static_cast<T>(std::forward<U>(value));
@@ -295,7 +281,7 @@ public: /** Observer the contained value **/
 
 public: /** assignment ( constructs the contained value in-place ) **/
     template <typename... ARGS>
-    void emplace(ARGS&& ...args) noexcept requires( std::constructible_from<T, ARGS...>)
+    void emplace(ARGS&& ...args) requires( std::constructible_from<T, ARGS...>)
     {
         if ( m_engaged ) (*m_store).T::~T();
 
@@ -339,7 +325,7 @@ public: /** Swap ( exchanges the contents ) **/
 
 
 public: /**  destroys any contained value  **/
-    void reset() noexcept
+    void reset()
     {
         if ( m_engaged ) (*m_store).T::~T();
 
@@ -348,12 +334,9 @@ public: /**  destroys any contained value  **/
 
 
 public: /** destructors **/
-    constexpr ~optional() noexcept requires( std::trivially_destructible<T> ) = default;
+    constexpr ~optional() requires( std::trivially_destructible<T> ) = default;
 
-    ~optional() noexcept requires( not std::trivially_destructible<T> )
-    {
-        reset();
-    }
+    ~optional() requires( not std::trivially_destructible<T> ) { reset(); }
 
 
 private:
@@ -376,6 +359,7 @@ private: /** type alias **/
     using reference       = typename std::add_lvalue_reference<T>::type;
     using const_reference = typename std::add_lvalue_reference<const_t>::type;
 
+
 public: /** constructors **/
     constexpr optional()          noexcept : m_reference(nullptr) {}
     
@@ -383,15 +367,14 @@ public: /** constructors **/
     
     constexpr optional(T& value)  noexcept : m_reference(std::addressof(value)) {}
     
-    optional(T&&) noexcept = delete;
-
-    constexpr optional(in_place_t, T& value) noexcept 
-        : m_reference(std::addressof(value)) 
-    {}
-
-    optional(in_place_t, T&&) = delete;
-
+    constexpr optional(in_place_t, T& value) noexcept  : m_reference(std::addressof(value)) {}
+    
     constexpr optional(optional const& rhs) noexcept : m_reference(rhs.m_reference) {}
+
+
+    optional(T&&)             noexcept = delete;
+    optional(in_place_t, T&&) noexcept = delete;
+
 
 public: /** assignment **/
     constexpr optional& operator=(nullopt_t) noexcept
@@ -402,8 +385,7 @@ public: /** assignment **/
     }
 
     template <typename U>
-    auto operator=(U&& rhs) noexcept -> optional& 
-        requires( std::same_as<typename std::decay<U>::type, optional<T&>> )
+    auto operator=(U&& rhs) noexcept -> optional&  requires( std::same_as<typename std::decay<U>::type, optional<T&>> )
     {
         m_reference = rhs.m_reference;
 
@@ -417,11 +399,9 @@ public: /** assignment **/
 
 public: /** Access the contained value **/
     auto operator->() const noexcept -> const_pointer { return m_reference; }
-    
     auto operator->()       noexcept -> pointer { return m_reference; }
 
     auto operator*() const noexcept -> const_reference { return *m_reference; }
-    
     auto operator*()       noexcept -> reference { return *m_reference; }
 
 
