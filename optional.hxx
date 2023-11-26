@@ -475,59 +475,45 @@ struct optional<T&&>
 
 /****** Relational operators ******/
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs == rhs } -> std::convertible_to<bool>; }
+
+
+
+template <std::equality_comparable T, std::equality_comparable_with<T> U>
 constexpr bool operator==(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs == *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs == *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs != rhs } -> std::convertible_to<bool>; }
+template <std::equality_comparable T, std::equality_comparable_with<T> U>
 constexpr bool operator!=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs != *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs != *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs < rhs } -> std::convertible_to<bool>; }
+
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
 constexpr bool operator<(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs < *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs < *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs <= rhs } -> std::convertible_to<bool>; }
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
 constexpr bool operator<=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs <= *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs <= *rhs ) : false;
 }
 
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs > rhs } -> std::convertible_to<bool>; }
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
 constexpr bool operator>(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs > *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs > *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs >= rhs } -> std::convertible_to<bool>; }
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
 constexpr bool operator>=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
-    return bool(rhs) && bool(lhs) ? ( *lhs >= *rhs ) : false;
+    return ( bool(rhs) && bool(lhs) ) ? ( *lhs >= *rhs ) : false;
 }
 
 
@@ -535,86 +521,47 @@ constexpr bool operator>=(optional<T> const& lhs, optional<U> const& rhs) noexce
 /***** Comparison with nullopt ******/
 
 template <typename T>
-constexpr bool operator==(optional<T> const& lhs, nullopt_t) noexcept
-{
-    return not( bool(lhs) );
-}
+constexpr bool operator==(optional<T> const& lhs, nullopt_t) noexcept { return not( bool(lhs) ); }
 
 template <typename T>
-constexpr bool operator==(nullopt_t, optional<T> const& rhs) noexcept
-{
-    return ::operator==(rhs, nullopt);
-}
+constexpr bool operator==(nullopt_t, optional<T> const& rhs) noexcept { return not( bool(rhs) ); }
 
 template <typename T>
-constexpr bool operator!=(optional<T> const& lhs, nullopt_t) noexcept
-{
-    return bool(lhs);
-}
+constexpr bool operator!=(optional<T> const& lhs, nullopt_t) noexcept { return bool(lhs); }
 
 template <typename T>
-constexpr bool operator!=(nullopt_t, optional<T> const& rhs) noexcept
-{
-    return ::operator!=(rhs, nullopt);
-}
+constexpr bool operator!=(nullopt_t, optional<T> const& rhs) noexcept { return bool(rhs); }
 
 template <typename T>
-constexpr bool operator<(optional<T> const&, nullopt_t) noexcept
-{
-    return false;
-}
+constexpr bool operator<(optional<T> const&, nullopt_t) noexcept { return false; }
 
 template <typename T>
-constexpr bool operator<(nullopt_t, optional<T> const& rhs) noexcept
-{
-    return bool(rhs);
-}
+constexpr bool operator<(nullopt_t, optional<T> const& rhs) noexcept { return bool(rhs); }
 
 template <typename T>
-constexpr bool operator<=(optional<T> const& lhs, nullopt_t) noexcept
-{
-    return not( bool(lhs) );
-}
+constexpr bool operator<=(optional<T> const& lhs, nullopt_t) noexcept { return not( bool(lhs) ); }
 
 template <typename T>
-constexpr bool operator<=(nullopt_t, optional<T> const&) noexcept
-{
-    return true;
-}
+constexpr bool operator<=(nullopt_t, optional<T> const&) noexcept { return true; }
 
 template <typename T>
-constexpr bool operator>(optional<T> const& lhs, nullopt_t) noexcept
-{
-    return bool(lhs);
-}
+constexpr bool operator>(optional<T> const& lhs, nullopt_t) noexcept { return bool(lhs); }
 
 template <typename T>
-constexpr bool operator>(nullopt_t, optional<T> const&) noexcept
-{
-    return false;
-}
+constexpr bool operator>(nullopt_t, optional<T> const&) noexcept { return false; }
 
 template <typename T>
-constexpr bool operator>=(optional<T> const&, nullopt_t) noexcept
-{
-    return true;
-}
+constexpr bool operator>=(optional<T> const&, nullopt_t) noexcept { return true; }
 
 template <typename T>
-constexpr bool operator>=(nullopt_t, optional<T> const& rhs) noexcept
-{
-    return not( bool(rhs) );
-}
+constexpr bool operator>=(nullopt_t, optional<T> const& rhs) noexcept { return not( bool(rhs) ); }
 
 
 
 /** Comparison with  U **/
 
-template <typename T, typename U >
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs == rhs } -> std::convertible_to<bool>; }
-constexpr bool operator==(optional<T> const& lhs, U const& rhs) noexcept
+template <std::equality_comparable T, std::equality_comparable_with<T> U>
+constexpr bool operator==(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs == rhs ) : false;
 }
@@ -622,14 +569,11 @@ constexpr bool operator==(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator==(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator==(rhs, lhs);
+    return bool(rhs) ? ( lhs == *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs != rhs } -> std::convertible_to<bool>; }
-constexpr bool operator!=(optional<T> const& lhs, U const& rhs) noexcept
+template <std::equality_comparable T, std::equality_comparable_with<T> U>
+constexpr bool operator!=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs != rhs ) : false;
 }
@@ -637,14 +581,11 @@ constexpr bool operator!=(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator!=(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator!=(rhs, lhs);
+    return bool(rhs) ? ( lhs != *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs < rhs } -> std::convertible_to<bool>; }
-constexpr bool operator<(optional<T> const& lhs, U const& rhs) noexcept
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
+constexpr bool operator<(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs < rhs ) : false;
 }
@@ -652,14 +593,11 @@ constexpr bool operator<(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator<(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator<(rhs, lhs);
+    return bool(rhs) ? ( lhs < *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs <= rhs } -> std::convertible_to<bool>; }
-constexpr bool operator<=(optional<T> const& lhs, U const& rhs) noexcept
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
+constexpr bool operator<=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs <= rhs ) : false;
 }
@@ -667,15 +605,12 @@ constexpr bool operator<=(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator<=(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator<=(rhs, lhs);
+    return bool(rhs) ? ( lhs <= *rhs ) : false;
 }
 
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs > rhs } -> std::convertible_to<bool>; }
-constexpr bool operator>(optional<T> const& lhs, U const& rhs) noexcept
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
+constexpr bool operator>(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs > rhs ) : false;
 }
@@ -683,14 +618,11 @@ constexpr bool operator>(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator>(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator>(rhs, lhs);
+    return bool(rhs) ? ( lhs > *rhs ) : false;
 }
 
-template <typename T, typename U>
-requires requires(const std::remove_reference_t<T>& lhs,
-                  const std::remove_reference_t<U>& rhs )
-    { { lhs >= rhs } -> std::convertible_to<bool>; }
-constexpr bool operator>=(optional<T> const& lhs, U const& rhs) noexcept
+template <std::totally_ordered T, std::totally_ordered_with<T> U>
+constexpr bool operator>=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs >= rhs ) : false;
 }
@@ -698,7 +630,7 @@ constexpr bool operator>=(optional<T> const& lhs, U const& rhs) noexcept
 template <typename T, typename U>
 constexpr bool operator>=(T const& lhs, optional<U> const& rhs) noexcept
 {
-    return ::operator>=(rhs, lhs);
+    return bool(rhs) ? ( lhs >= *rhs ) : false;
 }
 
 
@@ -754,5 +686,6 @@ namespace std
         }
     };
 }
+
 
 #endif
