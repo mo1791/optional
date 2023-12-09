@@ -1,31 +1,29 @@
+// ---------------------------------------------
+// Copyright (C) 2017 - 2018 Mohammed ELomari.
+// ---------------------------------------------
+
+// A single-header header-only library for representing optional (nullable) objects for C++
+
 #ifndef _OPTIONAL_HXX_
 #define _OPTIONAL_HXX_
 
-
-#include <concepts>
 #include <iostream>
+#include <type_traits>
+#include <utility>
+#include <cassert>
 
+template <typename> class optional;
 
-namespace std
-{
+namespace detail {
 
-    /** workaround for missing concepts in GCC and CLANG **/
-    template <typename T>
-    concept trivially_copy_constructible = is_trivially_copy_constructible<T>::value;
+template <typename T>
+struct is_not_optional : public std::true_type {};
 
-    template <typename T>
-    concept trivially_move_constructible = is_trivially_move_constructible<T>::value;
+template <typename T>
+struct is_not_optional<::optional<T>> : public std::false_type {};
 
-    template <typename T>
-    concept trivially_copy_assignable    = is_trivially_copy_assignable<T>::value;
+}  // namespace detail
 
-    template <typename T>
-    concept trivially_move_assignable    = is_trivially_move_assignable<T>::value;
-
-    template <typename T>
-    concept trivially_destructible       = is_trivially_destructible<T>::value;
-    /** END **/
-}
 
 
 /** class bad_optional_access **/
@@ -38,18 +36,23 @@ public:
 /** END **/
 
 
-inline constexpr struct trivial_init_t{} trivial_init{};
+/** trivially construction **/
+inline constexpr struct trivially_t {
+    constexpr trivially_t() noexcept = default;
+} trivially{};
+/** END **/
 
 /** In-place construction **/
-inline constexpr struct in_place_t {} in_place{};
+inline constexpr struct in_place_t {
+    constexpr in_place_t() noexcept = default;
+} in_place{};
 /** END **/
 
 
 /** Disengaged state indicator **/
-struct nullopt_t
-{
-    struct init{};
-    constexpr nullopt_t(init){};
+struct nullopt_t {
+    struct init {};
+    constexpr nullopt_t(init) noexcept {};
 };
 
 inline constexpr nullopt_t nullopt{nullopt_t::init{}};
@@ -57,50 +60,63 @@ inline constexpr nullopt_t nullopt{nullopt_t::init{}};
 
 
 
-template <typename T>
-union storage_t
+template <typename T> union storage_t
 {
 
+
 public: /** type alias **/
+
     using value_type = T;
     using const_value_type = typename std::add_const<T>::type;
     using reference        = typename std::add_lvalue_reference<T>::type;
     using const_reference  = typename std::add_lvalue_reference<const_value_type>::type;
 
-
 public: /** constructors **/
-    constexpr storage_t(trivial_init_t) noexcept : m_dummy() {}
-    
-    template <typename ...ARGS>
-    constexpr storage_t(ARGS&& ...args) requires( std::constructible_from<T, ARGS...>)
-        : m_value(std::forward<ARGS>(args)...)
-    {}
+
+    constexpr storage_t(trivially_t) noexcept(true) : m_dummy() {}
+
+    template <typename... ARGS>
+    constexpr storage_t(ARGS&&... args)
+            noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
+            requires(std::is_constructible<T, ARGS...>::value)
+    {
+        ::new(std::addressof(m_value)) T(std::forward<ARGS>(args)...);
+    }
 
 
 public: /** Access the contained value **/
-    constexpr auto operator*() const -> const_reference { return m_value; }
-    constexpr auto operator*()       -> reference       { return m_value; }
 
-public: /** destructors **/
-    constexpr ~storage_t() requires( std::trivially_destructible<T> ) = default;
+    auto operator*() const noexcept -> const T&
+    {
+        return *std::launder(reinterpret_cast<const T*>(std::addressof(m_value)));
+    }
     
-    ~storage_t() requires( not std::trivially_destructible<T> ) {}
+    auto operator*() noexcept -> T&
+    {
+        return *std::launder(reinterpret_cast<T*>(std::addressof(m_value)));
+    }
+
+public: /** ddestructors **/
+
+    constexpr ~storage_t() noexcept(std::is_nothrow_destructible<T>::value)
+        requires(std::is_trivially_destructible<T>::value)
+    = default;
 
 private:
     std::byte m_dummy;
-    T m_value;
+    alignas(T) std::aligned_storage_t<sizeof(T), alignof(T)> m_value;
 };
 
 
 
 /** optional for objects types **/
-template <typename T>
-class optional
+template <typename T> class optional
 {
-    static_assert( not std::same_as<typename std::decay<T>::type, nullopt_t>, "bad T" );
-    static_assert( not std::same_as<typename std::decay<T>::type, in_place_t>, "bad T" );
+    static_assert( not std::is_same<typename std::decay<T>::type, nullopt_t>::value,  "bad T" );
+    static_assert( not std::is_same<typename std::decay<T>::type, in_place_t>::value, "bad T" );
 
 public: /** type alias **/
+
     using value_type       = T;
     using const_value_type = typename std::add_const<T>::type;
     using reference        = typename std::add_lvalue_reference<T>::type;
@@ -108,182 +124,307 @@ public: /** type alias **/
     using pointer          = typename std::add_pointer<T>::type;
     using const_pointer    = typename std::add_pointer<const_value_type>::type;
 
+
 public: /** constructors **/
 
-    constexpr optional() noexcept : m_engaged(false) , m_store(trivial_init) {}
+    constexpr optional() noexcept(true)
+        : m_engaged(false), m_store(trivially)
+    {
+    }
 
-    constexpr optional(nullopt_t) noexcept : optional() {}
+    constexpr optional(nullopt_t) noexcept(true) : optional() {}
 
-    constexpr optional(T const& value) requires( std::copy_constructible<T> )
+    constexpr optional(const T& value)
+            noexcept(std::is_nothrow_copy_constructible<T>::value)
+            requires(std::is_copy_constructible<T>::value)
         : m_engaged(true)
         , m_store(value)
-    {}
+    {
+    }
 
-    constexpr optional(T&& value) requires( std::move_constructible<T> )
+    constexpr optional(T&& value)
+            noexcept(std::is_nothrow_move_constructible<T>::value)
+            requires(std::is_move_constructible<T>::value)
         : m_engaged(true)
         , m_store(std::move(value))
-    {}
+    {
+    }
 
-    template <typename ...ARGS>
-    constexpr optional(in_place_t, ARGS&& ...args)
+    template <typename U>
+    constexpr optional(U&& value)
+            noexcept(std::is_nothrow_constructible<T, U&&>::value)
+            requires(std::conjunction<
+                        std::negation<std::is_same<T, std::remove_reference_t<U>>>,
+                        std::disjunction<
+                            std::is_constructible<T, U &&>,
+                            std::is_convertible<std::remove_reference_t<U>, T>>>::value)
+        : m_engaged(true)
+        , m_store(std::forward<U>(value))
+    {
+    }
+
+    template <typename... ARGS>
+    constexpr optional(in_place_t, ARGS&&... args)
+            noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
+            requires(std::is_constructible<T, ARGS...>::value)
         : m_engaged(true)
         , m_store(std::forward<ARGS>(args)...)
-    {}
-
-    constexpr optional(optional const&) 
-        requires( std::copy_constructible<T> && std::trivially_copy_constructible<T> ) = default;
-
-    constexpr optional(optional const& rhs) 
-        requires( std::copy_constructible<T> && not std::trivially_copy_constructible<T> )
     {
-        if ( rhs.m_engaged )
-        {
-            ::new( std::addressof(*m_store) ) T(*rhs); 
-            
+    }
+
+public: /** copy/move/Coercion constructors **/
+
+    constexpr optional(const optional&)
+        noexcept(std::is_nothrow_copy_constructible<T>::value)
+        requires(std::conjunction<
+                    std::is_copy_constructible<T>,
+                    std::is_trivially_copy_constructible<T>>::value)
+    = default;
+
+    constexpr optional(const optional& other)
+        noexcept(std::is_nothrow_copy_constructible<T>::value)
+        requires(std::conjunction<
+                 std::is_copy_constructible<T>,
+                 std::negation<std::is_trivially_copy_constructible<T>>>::value)
+    {
+        if (other.m_engaged) {
+            ::new (std::addressof(*m_store)) T(*other);
             m_engaged = true;
         }
     }
 
     constexpr optional(optional&&)
-        requires( std::move_constructible<T> && std::trivially_move_constructible<T> ) = default;
-    
-    constexpr optional(optional&& rhs)
-        requires( std::move_constructible<T> && not std::trivially_move_constructible<T> )
-    {
-        if ( rhs.m_engaged )
-        {
-            ::new( std::addressof(*m_store) ) T(std::move(*rhs));
+        noexcept(std::is_nothrow_move_constructible<T>::value)
+        requires(std::conjunction<
+                    std::is_move_constructible<T>,
+                    std::is_trivially_move_constructible<T>>::value)
+    = default;
 
+    constexpr optional(optional&& other) noexcept(
+        std::is_nothrow_move_constructible<T>::value)
+        requires(std::conjunction<
+                 std::is_move_constructible<T>,
+                 std::negation<std::is_trivially_move_constructible<T>>>::value)
+    {
+        if (other.m_engaged) {
+            ::new (std::addressof(*m_store)) T(std::move(*other));
             m_engaged = true;
         }
     }
-        
-public: /** assignment **/
-    constexpr auto operator=(optional const&) -> optional &
-        requires( std::is_copy_assignable_v<T> && std::trivially_copy_assignable<T> ) = default;
-    
-    constexpr auto operator=(optional const& rhs)  -> optional &
-        requires( std::is_copy_assignable_v<T> && not std::trivially_copy_assignable<T> )
+
+    template <typename U>
+    constexpr optional(const optional<U>& other) noexcept(
+        std::is_nothrow_constructible<T, const U&>::value)
+        requires(std::conjunction<detail::is_not_optional<U>,
+                                  std::is_constructible<T, const U&>>::value)
     {
-        if ( rhs.m_engaged )
+        if (other.m_engaged) {
+            ::new (std::addressof(*m_store)) T(*other);
+            m_engaged = true;
+        }
+    }
+
+    template <typename U>
+    constexpr optional(optional<U>&& other) noexcept(
+        std::is_nothrow_constructible<T, U&&>::value)
+        requires(std::conjunction<detail::is_not_optional<U>,
+                                  std::is_constructible<T, U &&>>::value)
+    {
+        if (other.m_engaged) {
+            ::new (std::addressof(*m_store)) T(std::move(*other));
+            m_engaged = true;
+        }
+    }
+
+public: /** copy/move/Coercion assignment operators **/
+
+    constexpr auto operator=(nullopt_t) noexcept(true) -> optional&
+    {
+        reset();
+        return *this;
+    }
+
+    constexpr auto operator=(const optional&)
+        noexcept(std::conjunction<std::is_nothrow_copy_assignable<T>,
+                         std::is_nothrow_copy_constructible<T>>::value) -> optional&
+        requires(std::conjunction<std::is_copy_assignable<T>,
+                                  std::is_copy_constructible<T>,
+                                  std::is_trivially_copy_assignable<T>>::value)
+    = default;
+
+    constexpr auto operator=(const optional& rhs)
+        noexcept(std::conjunction<std::is_nothrow_copy_assignable<T>,
+                         std::is_nothrow_copy_constructible<T>>::value) -> optional&
+        requires(std::conjunction<
+                 std::is_copy_assignable<T>, std::is_copy_constructible<T>,
+                 std::negation<std::is_trivially_copy_assignable<T>>>::value)
+    {
+        if (bool(rhs))
         {
-            if ( m_engaged )
-            {
+            if (m_engaged) {
                 *m_store = *rhs;
             }
             else {
-                ::new( std::addressof(*m_store) ) T(*rhs);
-
+                ::new (std::addressof(*m_store)) T(*rhs);
                 m_engaged = true;
             }
         }
         else {
-            if ( m_engaged )
-            {
-                (*m_store).T::~T();
-
-                m_engaged = false;
-            }
+            if (m_engaged) reset();
         }
         return *this;
     }
 
-    constexpr auto operator=(optional&&) -> optional &
-        requires( std::is_move_assignable_v<T> && std::trivially_move_assignable<T> ) = default;
-    
-    constexpr auto operator=(optional&& rhs) -> optional &
-        requires( std::is_move_assignable_v<T> && not std::trivially_move_assignable<T> )
+    constexpr auto operator=(optional&&)
+        noexcept(std::conjunction<std::is_nothrow_move_assignable<T>,
+                         std::is_nothrow_move_constructible<T>>::value) -> optional&
+        requires(std::conjunction<std::is_move_assignable<T>,
+                                  std::is_move_constructible<T>,
+                                  std::is_trivially_move_assignable<T>>::value)
+    = default;
+
+    constexpr auto operator=(optional&& rhs)
+        noexcept(std::conjunction<std::is_nothrow_move_assignable<T>,
+                         std::is_nothrow_move_constructible<T>>::value) -> optional&
+        requires(std::conjunction<
+                 std::is_move_assignable<T>, std::is_move_constructible<T>,
+                 std::negation<std::is_trivially_move_assignable<T>>>::value)
     {
-        if ( rhs.m_engaged )
+        if (bool(rhs))
         {
-            if ( m_engaged )
-            {
+            if (m_engaged) {
                 *m_store = std::move(*rhs);
             }
             else {
-                ::new( std::addressof(*m_store) ) T(std::move(*rhs));
-
+                ::new (std::addressof(*m_store)) T(std::move(*rhs));
                 m_engaged = true;
             }
         }
         else {
-            if ( m_engaged )
-            {
-                (*m_store).T::~T();
+            if (m_engaged) reset();
+        }
 
-                m_engaged = false;
+        return *this;
+    }
+
+    template <typename U>
+    constexpr auto operator=(const optional<U>& rhs)
+        noexcept(std::conjunction<std::is_nothrow_assignable<T, const U&>,
+                         std::is_nothrow_constructible<T, const U&>>::value) -> optional&
+        requires(std::conjunction<detail::is_not_optional<U>,
+                                  std::is_assignable<T, const U&>,
+                                  std::is_constructible<T, const U&>>::value)
+    {
+        if (bool(rhs))
+        {
+            if (m_engaged) {
+                *m_store = *rhs;
             }
+            else {
+                ::new (std::addressof(*m_store)) T(*rhs);
+                m_engaged = true;
+            }
+        }
+        else {
+            if (m_engaged) reset();
         }
         return *this;
     }
 
     template <typename U>
-    constexpr auto operator=(U&& value) -> optional& requires( std::assignable_from<U, T> )
+    constexpr auto operator=(optional<U>&& rhs)
+        noexcept(std::conjunction<std::is_nothrow_assignable<T, U&&>,
+                         std::is_nothrow_constructible<T, U&&>>::value) -> optional&
+        requires(std::conjunction<detail::is_not_optional<U>,
+                                  std::is_assignable<T, U &&>,
+                                  std::is_constructible<T, U &&>>::value)
     {
-        if ( m_engaged )
+        if (bool(rhs))
         {
-            *m_store = std::forward<U>(value);
+            if (m_engaged) {
+                *m_store = std::move(*rhs);
+            }
+            else {
+                ::new (std::addressof(*m_store)) T(std::move(*rhs));
+                m_engaged = true;
+            }
         }
         else {
-            ::new( std::addressof(*m_store) ) T(std::forward<U>(value));
-            m_engaged = true;
+            if (m_engaged) reset();
         }
-        return *this;
-    }
-
-    constexpr auto operator=(nullopt_t) -> optional &
-    {
-        reset();
 
         return *this;
     }
 
 
 public: /** Access contained value **/
-    auto operator->() const -> const_pointer { return std::addressof(*m_store); }
-    auto operator->()       -> pointer       { return std::addressof(*m_store); }
 
+    auto operator*() const noexcept(true) -> const T&
+    {
+        assert(m_engaged && "Dereferencing disengaged optional");
+        return *m_store;
+    }
+    
+    auto operator*() noexcept(true) -> T&
+    {
+        assert(m_engaged && "Dereferencing disengaged optional");
+        return *m_store;
+    }
 
-    auto operator*() const -> const_reference { return *m_store; }
-    auto operator*()       -> reference       { return *m_store; }
-
+    auto operator->() const noexcept(true) -> const T*
+    {
+        assert(m_engaged && "Accessing disengaged optional");
+        return std::addressof(*m_store);
+    }
+    
+    auto operator->() noexcept(true) -> T*
+    {
+        assert(m_engaged && "Accessing disengaged optional");
+        return std::addressof(*m_store);
+    }
 
 public: /** checks whether the object contains a value **/
-    constexpr auto has_value() const -> bool { return m_engaged; }
-    
-    constexpr operator bool()  const { return m_engaged; }
+
+    constexpr operator bool() const noexcept(true) { return m_engaged; }
+
+    constexpr bool has_value() const noexcept(true) { return m_engaged; }
 
 
 public: /** Observer the contained value **/
-    auto value() const -> const_reference
+
+    auto value() const noexcept(false) -> const T&
     {
         return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
     }
 
-    auto value() 
+    auto value() noexcept(false) -> T&
     {
         return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
     }
 
     template <typename U>
-    auto value_or(U&& value) const& -> value_type requires( std::convertible_to<U, T> )
+    auto value_or(U&& value) const&  noexcept(std::is_nothrow_convertible<U, T>::value ) -> T
+        requires( std::is_convertible<U, T>::value )
     {
         return bool(*this) ? *m_store : static_cast<T>(std::forward<U>(value));
     }
 
     template <typename U>
-    auto value_or(U&& value) && -> value_type requires( std::convertible_to<U, T> )
+    auto value_or(U&& value) && noexcept(std::is_nothrow_convertible<U, T>::value) -> T
+        requires( std::is_convertible<U, T>::value )
     {
         return bool(*this)  ? std::move( *static_cast<optional&>(*this).m_store)
                             : static_cast<T>(std::forward<U>(value));
     }
 
-
 public: /** assignment ( constructs the contained value in-place ) **/
+
     template <typename... ARGS>
-    void emplace(ARGS&& ...args) requires( std::constructible_from<T, ARGS...>)
+    void emplace(ARGS&& ...args) 
+        noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
+        requires(std::is_constructible<T, ARGS...>::value)
     {
-        if ( m_engaged ) (*m_store).T::~T();
+        if ( m_engaged ) reset();
 
         ::new( std::addressof(*m_store) ) T(std::forward<ARGS>(args)...);
         
@@ -291,31 +432,28 @@ public: /** assignment ( constructs the contained value in-place ) **/
     }
 
 public: /** Swap ( exchanges the contents ) **/
-    void swap(optional& rhs) noexcept( noexcept( std::swap(std::declval<T&>(), std::declval<T&>()) ))
+
+    void swap(optional& rhs) noexcept(std::is_nothrow_swappable<T>::value)
+        requires(std::is_swappable<T>::value)
     {
         if ( m_engaged )
         {
-            if ( rhs.m_engaged )
-            {
-                using std::swap;
-                swap( *m_store, *rhs );
+            if ( rhs.m_engaged ) {
+                std::swap( *m_store, *rhs );
             }
             else {
                 ::new( std::addressof(*rhs) ) T(std::move(*m_store));                
                 rhs.m_engaged = true;
 
-                (*m_store).T::~T();
-                m_engaged = false;
+                reset();
             }
         }
         else {
-            if ( rhs.m_engaged )
-            {
+            if ( rhs.m_engaged ) {
                 ::new( std::addressof(*m_store) ) T(std::move(*rhs));
                 m_engaged = true;
 
-                (*rhs).T::~T();
-                rhs.m_engaged = false;
+                rhs.reset();
             }
             else {
                 return void();
@@ -323,36 +461,43 @@ public: /** Swap ( exchanges the contents ) **/
         }
     }
 
-
-public: /**  destroys any contained value  **/
-    void reset()
+public:
+    void reset() noexcept(std::is_nothrow_destructible<T>::value)
     {
-        if ( m_engaged ) (*m_store).T::~T();
-
+        if (m_engaged) (*m_store).T::~T();
+        
         m_engaged = false;
     }
 
 
-public: /** destructors **/
-    constexpr ~optional() requires( std::trivially_destructible<T> ) = default;
+public:
+    constexpr ~optional() noexcept(std::is_nothrow_destructible<T>::value)
+        requires(std::is_trivially_destructible<T>::value)
+    = default;
 
-    ~optional() requires( not std::trivially_destructible<T> ) { reset(); }
+    ~optional() noexcept(std::is_nothrow_destructible<T>::value)
+        requires(
+            std::conjunction<std::negation<std::is_trivially_destructible<T>>,
+                             std::is_destructible<T>>::value)
+    {
+        reset();
+    }
 
 
 private:
-    bool m_engaged { false };
+    bool m_engaged;
     storage_t<T> m_store;
 };
 
 
-/** optional for lvalue reference types **/
-template <typename T>
-struct optional<T&>
+template <typename T> class optional<T&>
 {
-    static_assert( not std::same_as<typename std::decay<T>::type, nullopt_t>, "bad T" );
-    static_assert( not std::same_as<typename std::decay<T>::type, in_place_t>, "bad T" );
+
+    static_assert( not std::is_same<typename std::decay<T>::type, nullopt_t>::value,  "bad T" );
+    static_assert( not std::is_same<typename std::decay<T>::type, in_place_t>::value, "bad T" );
 
 private: /** type alias **/
+
     using const_t         = typename std::add_const<T>::type;   
     using pointer         = typename std::add_pointer<T>::type;
     using const_pointer   = typename std::add_pointer<const_t>::type;
@@ -361,63 +506,86 @@ private: /** type alias **/
 
 
 public: /** constructors **/
-    constexpr optional()          noexcept : m_reference(nullptr) {}
-    
-    constexpr optional(nullopt_t) noexcept : m_reference(nullptr) {}
-    
-    constexpr optional(T& value)  noexcept : m_reference(std::addressof(value)) {}
-    
-    constexpr optional(in_place_t, T& value) noexcept  : m_reference(std::addressof(value)) {}
-    
-    constexpr optional(optional const& rhs) noexcept : m_reference(rhs.m_reference) {}
+
+    constexpr optional() noexcept(true) : m_reference(nullptr) {}
+
+    constexpr optional(nullopt_t) noexcept(true) : m_reference(nullptr) {}
+
+    constexpr optional(T& value) noexcept(true)
+        : m_reference(std::addressof(value))
+    {
+    }
+
+    constexpr optional(in_place_t, T& value) noexcept(true)
+        : m_reference(std::addressof(value))
+    {
+    }
+
+    optional(T&&) noexcept(true) = delete;
+
+    optional(in_place_t, T&&) noexcept(true) = delete;
 
 
-    optional(T&&)             noexcept = delete;
-    optional(in_place_t, T&&) noexcept = delete;
+public: /** copy constructor **/
+    
+    constexpr optional(const optional& other) noexcept(true)
+        : m_reference(other.m_reference)
+    {
+    }
 
+    constexpr optional(optional&&) noexcept(true) = delete;
 
 public: /** assignment **/
-    constexpr optional& operator=(nullopt_t) noexcept
-    {
-        m_reference = nullptr;
 
-        return *this;
-    }
-
-    template <typename U>
-    auto operator=(U&& rhs) noexcept -> optional&  requires( std::same_as<typename std::decay<U>::type, optional<T&>> )
+    constexpr auto operator=(const optional& rhs) noexcept(true) -> optional&
     {
         m_reference = rhs.m_reference;
-
         return *this;
     }
 
-    template <typename U>
-    auto operator=(U&& rhs) noexcept -> optional& 
-        requires( not std::same_as<typename std::decay<U>::type, optional<T&>> ) = delete;
+    auto operator=(optional&&) noexcept(true) = delete;
 
 
 public: /** Access the contained value **/
-    auto operator->() const noexcept -> const_pointer { return m_reference; }
-    auto operator->()       noexcept -> pointer { return m_reference; }
 
-    auto operator*() const noexcept -> const_reference { return *m_reference; }
-    auto operator*()       noexcept -> reference { return *m_reference; }
+    auto operator*() const noexcept(true) -> const T&
+    {
+        assert(m_reference && "Dereferencing disengaged optional");
+        return *m_reference;
+    }
+    auto operator*() noexcept(true) -> T&
+    {
+        assert(m_reference && "Dereferencing disengaged optional");
+        return *m_reference;
+    }
 
+    auto operator->() const noexcept(true) -> const T*
+    {
+        assert(m_reference && "Accessing disengaged optional");
+        return m_reference;
+    }
+    auto operator->() noexcept(true) -> T*
+    {
+        assert(m_reference && "Accessing disengaged optional");
+        return m_reference;
+    }
 
 public: /** Observer the contained value **/
-    auto value() const -> const_reference
+
+    auto value() const noexcept(false) -> const T&
     {
         return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
     }
-    auto value() -> reference
+    auto value() noexcept(false) -> T&
     {
         return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
     }
 
     template <typename U>
-    auto value_or(U&& value) const noexcept -> typename std::decay<T>::type
-        requires( std::convertible_to<U, typename std::decay<T>::type> )
+    auto value_or(U& value) const 
+        noexcept( std::is_nothrow_convertible<U, 
+                    typename std::decay<T>::type>::value) -> typename std::decay<T>::type
+        requires( std::is_convertible<U, typename std::decay<T>::type>::value )
     {
         return bool(*this)  ? *m_reference
                             : static_cast<typename std::decay<T>::type>(std::forward<U>(value));
@@ -435,48 +603,37 @@ public: /** assignment **/
 
 
 public: /** Swap ( exchanges the contents ) **/
-    void swap(optional& rhs) noexcept( noexcept(std::swap(std::declval<T&>(), std::declval<T&>())) )
+    void swap(optional& rhs) noexcept( true )
     {
-        using std::swap;
-
-        swap( rhs.m_reference, m_reference );
+        std::swap( rhs.m_reference, m_reference );
     }
 
 
 public: /** checks whether the object contains a value **/
-    constexpr auto has_value() const noexcept -> bool { return m_reference != nullptr; }
 
-    constexpr operator bool() const noexcept { return m_reference != nullptr; }
+    constexpr operator bool() const noexcept(true) { return ( m_reference != nullptr ); }
 
+    constexpr bool has_value() const noexcept(true) { return ( m_reference != nullptr ); }
 
-public: /** unlink **/
+public:
+    void reset() noexcept(true) { m_reference = nullptr; }
 
-    void reset() noexcept
-    {
-        m_reference = nullptr;
-    }
-
-
-public: /** destructor **/
-    constexpr ~optional() noexcept = default;
+public:
+    constexpr ~optional() noexcept(true) = default;
 
 private:
-    pointer m_reference;
+   typename std::add_pointer<T>::type m_reference;
 };
 
-
 template <typename T>
-struct optional<T&&>
+class optional<T&&>
 {
-    static_assert( sizeof(T) == 0ul, "disallowed for rvalue reference" );
+    static_assert(sizeof(T) == 0UL, "disallowed for rvalue reference!");
 };
 
 
 
 /****** Relational operators ******/
-
-
-
 
 template <std::equality_comparable T, std::equality_comparable_with<T> U>
 constexpr bool operator==(optional<T> const& lhs, optional<U> const& rhs) noexcept
@@ -686,6 +843,5 @@ namespace std
         }
     };
 }
-
 
 #endif
