@@ -464,8 +464,10 @@ public: /** Swap ( exchanges the contents ) **/
 public:
     void reset() noexcept(std::is_nothrow_destructible<T>::value)
     {
-        if (m_engaged) (*m_store).T::~T();
-        
+        if (m_engaged)
+            std::destroy_at(
+                std::launder(reinterpret_cast<T*>(std::addressof(*m_store))));
+
         m_engaged = false;
     }
 
