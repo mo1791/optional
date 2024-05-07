@@ -154,13 +154,18 @@ public:
     // initialized as if direct-initializing (but not direct-list-initializing) an object of type T
     // with the expression std::forward<U>(value). 
     template <typename U>
-    constexpr optional(U&& value)
-            noexcept(std::is_nothrow_constructible<T, U&&>::value)
-            requires(std::conjunction<
-                        std::negation<std::is_same<T, std::remove_reference_t<U>>>,
-                        std::disjunction<
-                            std::is_constructible<T, U &&>,
-                            std::is_convertible<std::remove_reference_t<U>, T>>>::value)
+    constexpr optional(U&& value) noexcept(std::is_nothrow_constructible<T, U>::value)
+            requires(std::conjunction<std::is_constructible<T, U>,
+                                      std::is_convertible<U, T>>::value)
+        : m_engaged(true)
+        , m_store(std::forward<U>(value))
+    {
+    }
+
+    template <typename U>
+    explicit constexpr optional(U&& value) noexcept(std::is_nothrow_constructible<T, U>::value)
+        requires(std::conjunction<std::is_constructible<T, U>,
+                                  std::negation<std::is_convertible<U, T>>>::value)
         : m_engaged(true)
         , m_store(std::forward<U>(value))
     {
