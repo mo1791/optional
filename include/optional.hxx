@@ -50,12 +50,9 @@ inline constexpr struct in_place_t {
 
 
 // Disengaged state indicator
-struct nullopt_t {
-    struct init {};
-    constexpr nullopt_t(init) noexcept {};
-};
-
-inline constexpr nullopt_t nullopt{nullopt_t::init{}};
+inline constexpr struct nullopt_t {
+    constexpr nullopt_t(int) noexcept {};
+} nullopt{0};
 // END
 
 
@@ -74,8 +71,20 @@ public: // constructors
 
     constexpr storage_t(trivially_init_t) noexcept(true) {}
 
+
+    template <typename U>
+    constexpr storage_t(U&& value)
+        noexcept(std::is_nothrow_constructible<T, U>::value)
+        requires(std::is_constructible<T, U>::value)
+    {
+        std::construct_at(
+            std::launder(reinterpret_cast<T*>(std::addressof(m_value))),
+            std::forward<U>(value)
+        );
+    }
+
     template <typename... ARGS>
-    constexpr storage_t(ARGS&&... args)
+    constexpr storage_t(in_place_t, &&... args)
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
             requires(std::is_constructible<T, ARGS...>::value)
     {
@@ -118,7 +127,7 @@ public: // ddestructors
     }
 
 private:
-    alignas(T) std::byte m_value[sizeof(T)];
+    alignas(T) unsigned char m_value[sizeof(T)];
 };
 
 
@@ -142,9 +151,7 @@ public: //  type alias
 public:
 
     // Constructs an object that does not contain a value
-    constexpr optional() noexcept(true)
-        : m_engaged(false), m_store(trivially_init)
-    { }
+    constexpr optional() noexcept(true) = default;
 
     // Constructs an object that does not contain a value
     constexpr optional(nullopt_t) noexcept(true) : optional() {}
@@ -179,7 +186,7 @@ public:
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
             requires(std::is_constructible<T, ARGS...>::value)
         : m_engaged(true)
-        , m_store(std::forward<ARGS>(args)...)
+        , m_store(in_place, std::forward<ARGS>(args)...)
     {
     }
 
@@ -187,16 +194,15 @@ public:
     // Copy constructor
     constexpr optional(const optional&)
         noexcept(std::is_nothrow_copy_constructible<T>::value)
-        requires(std::conjunction<
-                    std::is_copy_constructible<T>,
-                    std::is_trivially_copy_constructible<T>>::value)
+        requires(std::conjunction<std::is_copy_constructible<T>,
+                                  std::is_trivially_copy_constructible<T>>::value)
     = default;
+
     // Copy constructor
     constexpr optional(const optional& other)
         noexcept(std::is_nothrow_copy_constructible<T>::value)
-        requires(std::conjunction<
-                 std::is_copy_constructible<T>,
-                 std::negation<std::is_trivially_copy_constructible<T>>>::value)
+        requires(std::conjunction<std::is_copy_constructible<T>,
+                                  std::negation<std::is_trivially_copy_constructible<T>>>::value)
         : optional()
     {
         if (other.m_engaged) {
@@ -208,17 +214,15 @@ public:
     // Move constructor
     constexpr optional(optional&&)
         noexcept(std::is_nothrow_move_constructible<T>::value)
-        requires(std::conjunction<
-                    std::is_move_constructible<T>,
-                    std::is_trivially_move_constructible<T>>::value)
+        requires(std::conjunction<std::is_move_constructible<T>,
+                                  std::is_trivially_move_constructible<T>>::value)
     = default;
 
     // Move constructor
-    constexpr optional(optional&& other) noexcept(
-        std::is_nothrow_move_constructible<T>::value)
-        requires(std::conjunction<
-                 std::is_move_constructible<T>,
-                 std::negation<std::is_trivially_move_constructible<T>>>::value)
+    constexpr optional(optional&& other)
+        noexcept(std::is_nothrow_move_constructible<T>::value)
+        requires(std::conjunction<std::is_move_constructible<T>,
+                                  std::negation<std::is_trivially_move_constructible<T>>>::value)
         : optional()
     {
         if (other.m_engaged) {
@@ -229,8 +233,8 @@ public:
 
     // Converting copy constructor ( Coercion by Member Template )
     template <typename U>
-    constexpr optional(const optional<U>& other) noexcept(
-        std::is_nothrow_constructible<T, const U&>::value)
+    constexpr optional(const optional<U>& other)
+        noexcept(std::is_nothrow_constructible<T, const U&>::value)
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_constructible<T, const U&>>::value)
         : optional()
@@ -243,8 +247,8 @@ public:
 
     // Converting move constructor ( Coercion by Member Template )
     template <typename U>
-    constexpr optional(optional<U>&& other) noexcept(
-        std::is_nothrow_constructible<T, U&&>::value)
+    constexpr optional(optional<U>&& other)
+        noexcept(std::is_nothrow_constructible<T, U&&>::value)
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_constructible<T, U &&>>::value)
         : optional()
@@ -267,7 +271,7 @@ public:
     // Assigns the state of other to *this ( copy )
     constexpr auto operator=(const optional&)
         noexcept(std::conjunction<std::is_nothrow_copy_assignable<T>,
-                         std::is_nothrow_copy_constructible<T>>::value) -> optional&
+                                  std::is_nothrow_copy_constructible<T>>::value) -> optional&
         requires(std::conjunction<std::is_copy_assignable<T>,
                                   std::is_copy_constructible<T>,
                                   std::is_trivially_copy_assignable<T>>::value)
@@ -276,10 +280,10 @@ public:
     // copy assigns the state of other to *this
     constexpr auto operator=(const optional& rhs)
         noexcept(std::conjunction<std::is_nothrow_copy_assignable<T>,
-                         std::is_nothrow_copy_constructible<T>>::value) -> optional&
-        requires(std::conjunction<
-                 std::is_copy_assignable<T>, std::is_copy_constructible<T>,
-                 std::negation<std::is_trivially_copy_assignable<T>>>::value)
+                                  std::is_nothrow_copy_constructible<T>>::value) -> optional&
+        requires(std::conjunction<std::is_copy_assignable<T>,
+                                  std::is_copy_constructible<T>,
+                                  std::negation<std::is_trivially_copy_assignable<T>>>::value)
     {
         if (bool(rhs))
         {
@@ -300,19 +304,20 @@ public:
     // move assigns the state of other to *this
     constexpr auto operator=(optional&&)
         noexcept(std::conjunction<std::is_nothrow_move_assignable<T>,
-                         std::is_nothrow_move_constructible<T>>::value) -> optional&
+                                  std::is_nothrow_move_constructible<T>>::value) -> optional&
         requires(std::conjunction<std::is_move_assignable<T>,
                                   std::is_move_constructible<T>,
                                   std::is_trivially_move_assignable<T>>::value)
     = default;
 
+
     // Assigns the state of other to *this ( move )
     constexpr auto operator=(optional&& rhs)
         noexcept(std::conjunction<std::is_nothrow_move_assignable<T>,
-                         std::is_nothrow_move_constructible<T>>::value) -> optional&
-        requires(std::conjunction<
-                 std::is_move_assignable<T>, std::is_move_constructible<T>,
-                 std::negation<std::is_trivially_move_assignable<T>>>::value)
+                                  std::is_nothrow_move_constructible<T>>::value) -> optional&
+        requires(std::conjunction<std::is_move_assignable<T>,
+                                  std::is_move_constructible<T>,
+                                  std::negation<std::is_trivially_move_assignable<T>>>::value)
     {
         if (bool(rhs))
         {
@@ -335,7 +340,7 @@ public:
     template <typename U>
     constexpr auto operator=(const optional<U>& rhs)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, const U&>,
-                         std::is_nothrow_constructible<T, const U&>>::value) -> optional&
+                                  std::is_nothrow_constructible<T, const U&>>::value) -> optional&
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_assignable<T, const U&>,
                                   std::is_constructible<T, const U&>>::value)
@@ -360,7 +365,7 @@ public:
     template <typename U>
     constexpr auto operator=(optional<U>&& rhs)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, U&&>,
-                         std::is_nothrow_constructible<T, U&&>>::value) -> optional&
+                                  std::is_nothrow_constructible<T, U&&>>::value) -> optional&
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_assignable<T, U &&>,
                                   std::is_constructible<T, U &&>>::value)
@@ -386,9 +391,9 @@ public:
     template <typename U>
     constexpr auto operator=(U&& value)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, U&&>,
-                    std::is_nothrow_constructible<T, U&&>>::value) -> optional &
+                                  std::is_nothrow_constructible<T, U&&>>::value) -> optional &
         requires(std::conjunction<std::is_assignable<T, U&&>,
-                    std::is_constructible<T, U&&>>::value)
+                                  std::is_constructible<T, U&&>>::value)
     {
         if ( m_engaged )
         {
@@ -440,12 +445,20 @@ public:
     // Observer the contained value
     auto value() const noexcept(false) -> const T&
     {
-        return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
+        if ( bool(*this) )
+        {
+            return *m_store;
+        }
+        throw bad_optional_access{"no value engaged!"};
     }
     // Observer the contained value
     auto value() noexcept(false) -> T&
     {
-        return bool(*this)  ? *m_store : throw bad_optional_access{"no value engaged!"};
+        if ( bool(*this) )
+        {
+            *m_store;
+        }
+        throw bad_optional_access{"no value engaged!"};
     }
 
     // returns the contained value if available, another value otherwise 
@@ -453,7 +466,11 @@ public:
     auto value_or(U&& value) const&  noexcept(std::is_nothrow_convertible<U, T>::value ) -> T
         requires( std::is_convertible<U, T>::value )
     {
-        return bool(*this) ? *m_store : static_cast<T>(std::forward<U>(value));
+        if ( bool(*this) )
+        {
+            return *m_store;
+        }
+        return static_cast<T>(std::forward<U>(value));
     }
 
     // returns the contained value if available, another value otherwise 
@@ -461,8 +478,11 @@ public:
     auto value_or(U&& value) && noexcept(std::is_nothrow_convertible<U, T>::value) -> T
         requires( std::is_convertible<U, T>::value )
     {
-        return bool(*this)  ? std::move( *static_cast<optional&>(*this).m_store)
-                            : static_cast<T>(std::forward<U>(value));
+        if ( bool(*this) )
+        {
+            return std::move( *static_cast<optional&>(*this).m_store);
+        }
+        return static_cast<T>(std::forward<U>(value));
     }
 
 public: 
@@ -522,23 +542,24 @@ public:
 public:
 
     // destroys the contained value, if there is one 
-    constexpr ~optional() noexcept(std::is_nothrow_destructible<T>::value)
+    constexpr ~optional()
+        noexcept(std::is_nothrow_destructible<T>::value)
         requires(std::is_trivially_destructible<T>::value)
     = default;
 
     // destroys the contained value, if there is one 
-    ~optional() noexcept(std::is_nothrow_destructible<T>::value)
-        requires(
-            std::conjunction<std::negation<std::is_trivially_destructible<T>>,
-                             std::is_destructible<T>>::value)
+    ~optional()
+        noexcept(std::is_nothrow_destructible<T>::value)
+        requires(std::conjunction<std::negation<std::is_trivially_destructible<T>>,
+                                  std::is_destructible<T>>::value)
     {
         reset();
     }
 
 
 private:
-    bool m_engaged;
-    storage_t<T> m_store;
+    bool m_engaged { false };
+    storage_t<T> m_store { trivially_init };
 };
 
 
@@ -559,9 +580,9 @@ private: // type alias
 
 public: // constructors
 
-    constexpr optional() noexcept(true) : m_reference(nullptr) {}
+    constexpr optional() noexcept(true) = default;
 
-    constexpr optional(nullopt_t) noexcept(true) : m_reference(nullptr) {}
+    constexpr optional(nullopt_t) noexcept(true) : optional() {}
 
     constexpr optional(T& value) noexcept(true)
         : m_reference(std::addressof(value))
@@ -626,21 +647,31 @@ public: // Observer the contained value
 
     auto value() const noexcept(false) -> const T&
     {
-        return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
+        if ( bool(*this) )
+        {
+            return *m_reference;
+        }
+        throw bad_optional_access{"no value engaged!"};
     }
     auto value() noexcept(false) -> T&
     {
-        return bool(*this)  ? *m_reference : throw bad_optional_access{"no value engaged!"};
+        if ( bool(*this) )
+        {
+            return *m_reference
+        }    
+        throw bad_optional_access{"no value engaged!"};
     }
 
     template <typename U>
     auto value_or(U& value) const 
-        noexcept(std::is_nothrow_convertible<U, 
-                    typename std::decay<T>::type>::value) -> typename std::decay<T>::type
-        requires(std::is_convertible<U, typename std::decay<T>::type>::value)
+        noexcept(std::is_nothrow_convertible<U, T>::value) -> typename std::decay<T>::type
+        requires(std::is_convertible<U, T>::value)
     {
-        return bool(*this)  ? *m_reference
-                            : static_cast<typename std::decay<T>::type>(std::forward<U>(value));
+        if ( bool(*this) )
+        {
+            return *m_reference
+        }
+        return static_cast<typename std::decay<T>::type>(std::forward<U>(value));
     }
 
 public: // assignment
@@ -674,7 +705,7 @@ public:
     constexpr ~optional() noexcept(true) = default;
 
 private:
-   typename std::add_pointer<T>::type m_reference;
+   typename std::add_pointer<T>::type m_reference = nullptr;
 };
 
 template <typename T>
