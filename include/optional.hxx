@@ -100,7 +100,7 @@ public: // constructors
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
     {
         [&]<auto... Indx>(std::integer_sequence<std::size_t, Indx...>) {
-            ::new (static_cast<void*>(std::addressof(**this)) T{ std::get<Indx>(tuple)... };
+            ::new (static_cast<void*>(std::addressof(**this))) T{ std::get<Indx>(tuple)... };
         }( std::make_integer_sequence<std::size_t, sizeof...(ARGS)>{});
     }
         
@@ -181,9 +181,11 @@ public:
     }
 
     template <typename U>
+        requires std::conjunction<
+                    std::bool_constant<std::constructible_from<T, U>>,
+                    std::negation<std::bool_constant<std::convertible_to<U, T>>>
+                >::value
     explicit constexpr optional(U&& value) noexcept(std::is_nothrow_constructible<T, U>::value)
-        requires(std::conjunction<std::is_constructible<T, U>,
-                                  std::negation<std::is_convertible<U, T>>>::value)
         : m_engaged(true)
         , m_store(std::forward<U>(value))
     {
@@ -203,7 +205,7 @@ public:
     // Constructs an optional object that contains a value
     // initialized as if direct-initializing (but not direct-list-initializing) an object of type T
     // from tuple
-    template <template <typename...> class Tuple, typename... ARGS> requires std::constructible_from<T, ARGS...>::value)
+    template <template <typename...> class Tuple, typename... ARGS> requires std::constructible_from<T, ARGS...>
     constexpr optional(from_tuple_t indicator, const Tuple<ARGS...>& tuple)
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
         : m_engaged(true)
@@ -226,7 +228,8 @@ public:
                                   std::negation<std::is_trivially_copy_constructible<T>>>::value)
         : optional()
     {
-        if ( bool(other) ) {
+        if ( bool(other) )
+        {
             std::construct_at(std::addressof(**this), *other);
             this->m_engaged = true;
         }
@@ -246,7 +249,8 @@ public:
                                   std::negation<std::is_trivially_move_constructible<T>>>::value)
         : optional()
     {
-        if ( bool(other) ) {
+        if ( bool(other) )
+        {
             std::construct_at(std::addressof(**this), std::move(*other));
             this->m_engaged = true;
         }
@@ -254,13 +258,14 @@ public:
 
     // Converting copy constructor ( Coercion by Member Template )
     template <typename U>
+        requires std::conjunction<detail::is_not_optional<U>,
+                                  std::is_constructible<T, const U&>>::value
     constexpr optional(const optional<U>& other)
         noexcept(std::is_nothrow_constructible<T, const U&>::value)
-        requires(std::conjunction<detail::is_not_optional<U>,
-                                  std::is_constructible<T, const U&>>::value)
         : optional()
     {
-        if ( bool(other) ) {
+        if ( bool(other) )
+        {
             std::construct_at(std::addressof(**this), *other);
             this->m_engaged = true;
         }
@@ -268,13 +273,14 @@ public:
 
     // Converting move constructor ( Coercion by Member Template )
     template <typename U>
+        requires std::conjunction<detail::is_not_optional<U>,
+                                  std::is_constructible<T, U &&>>::value
     constexpr optional(optional<U>&& other)
         noexcept(std::is_nothrow_constructible<T, U&&>::value)
-        requires(std::conjunction<detail::is_not_optional<U>,
-                                  std::is_constructible<T, U &&>>::value)
         : optional()
     {
-        if ( bool(other) ) {
+        if ( bool(other) )
+        {
             std::construct_at(std::addressof(**this), std::move(*other));
             this->m_engaged = true;
         }
@@ -309,12 +315,14 @@ public:
         if ( bool(rhs) )
         {
             if ( bool(self) ) { *self = *rhs; }
-            else {
+            else
+            {
                 std::construct_at(std::addressof(*self), *rhs);
                 self.m_engaged = true;
             }
         }
-        else {
+        else
+        {
             if ( bool(self) ) { self.reset(); }
         }
         return self;
@@ -341,12 +349,14 @@ public:
         if ( bool(rhs) )
         {
             if ( bool(self) ) { *self = std::move(*rhs); }
-            else {
+            else
+            {
                 std::construct_at(std::addressof(*self), std::move(*rhs));
                 self.m_engaged = true;
             }
         }
-        else {
+        else
+        {
             if ( bool(self) )  { self.reset(); }
         }
 
@@ -365,12 +375,14 @@ public:
         if ( bool(rhs) )
         {
             if ( bool(self) ) { *self = *rhs; }
-            else {
+            else
+            {
                 std::construct_at(std::addressof(*self), *rhs);
                 self.m_engaged = true;
             }
         }
-        else {
+        else
+        {
             if ( bool(self) ) { self.reset(); }
         }
         return self;
@@ -388,15 +400,16 @@ public:
         if ( bool(rhs) )
         {
             if ( bool(self) ) { *self = std::move(*rhs); }
-            else {
+            else
+            {
                 std::construct_at(std::addressof(*self), std::move(*rhs));
                 self.m_engaged = true;
             }
         }
-        else {
+        else
+        {
             if ( bool(self) )  { self.reset(); }
         }
-
         return self;
     }
 
@@ -409,7 +422,8 @@ public:
                                   std::is_constructible<T, U&&>>::value)
     {
         if ( bool(self) ) { *self = std::forward<U>(value); }
-        else {
+        else
+        {
             std::construct_at(std::addressof(*self), std::forward<U>(value));
             self.m_engaged = true;
         }
@@ -506,10 +520,12 @@ public:
     {
         if ( bool(self) )
         {
-            if ( bool(rhs) ) {
+            if ( bool(rhs) )
+            {
                 std::swap( *self, *rhs );
             }
-            else {
+            else
+            {
                 std::construct_at(std::addressof(*rhs), std::move(*self));
                 rhs.m_engaged = true;
 
@@ -517,13 +533,15 @@ public:
             }
         }
         else {
-            if ( bool(rhs) ) {
+            if ( bool(rhs) )
+            {
                 std::construct_at(std::addressof(*self), std::move(*rhs));
                 self.m_engaged = true;
 
                 rhs.reset();
             }
-            else {
+            else
+            {
                 return void();
             }
         }
@@ -533,7 +551,8 @@ public:
     // destroys any contained value
     void reset(this optional& self) noexcept(std::is_nothrow_destructible<T>::value)
     {
-        if ( bool(self) ) {
+        if ( bool(self) )
+        {
             std::destroy_at(std::addressof(*self));
             self.m_engaged = false;
         }
@@ -713,20 +732,16 @@ class optional<T&&>
 /****** Relational operators ******/
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::equality_comparable<T>>,
-            std::bool_constant<std::equality_comparable_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::equality_comparable<T>>,
+                              std::bool_constant<std::equality_comparable_with<U, T>>>::value
 constexpr bool operator==(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs == *rhs ) : false;
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::equality_comparable<T>>,
-            std::bool_constant<std::equality_comparable_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::equality_comparable<T>>,
+                              std::bool_constant<std::equality_comparable_with<U, T>>>::value
 constexpr bool operator!=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs != *rhs ) : false;
@@ -734,20 +749,16 @@ constexpr bool operator!=(optional<T> const& lhs, optional<U> const& rhs) noexce
 
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator<(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs < *rhs ) : false;
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator<=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs <= *rhs ) : false;
@@ -755,20 +766,16 @@ constexpr bool operator<=(optional<T> const& lhs, optional<U> const& rhs) noexce
 
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator>(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs > *rhs ) : false;
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator>=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs >= *rhs ) : false;
@@ -819,10 +826,8 @@ constexpr bool operator>=(nullopt_t, optional<T> const& rhs) noexcept { return n
 /** Comparison with  U **/
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::equality_comparable<T>>,
-            std::bool_constant<std::equality_comparable_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::equality_comparable<T>>,
+                              std::bool_constant<std::equality_comparable_with<U, T>>>::value
 constexpr bool operator==(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs == rhs ) : false;
@@ -835,10 +840,8 @@ constexpr bool operator==(T const& lhs, optional<U> const& rhs) noexcept
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::equality_comparable<T>>,
-            std::bool_constant<std::equality_comparable_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::equality_comparable<T>>,
+                              std::bool_constant<std::equality_comparable_with<U, T>>>::value
 constexpr bool operator!=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs != rhs ) : false;
@@ -851,10 +854,8 @@ constexpr bool operator!=(T const& lhs, optional<U> const& rhs) noexcept
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator<(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs < rhs ) : false;
@@ -867,10 +868,8 @@ constexpr bool operator<(T const& lhs, optional<U> const& rhs) noexcept
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator<=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs <= rhs ) : false;
@@ -884,10 +883,8 @@ constexpr bool operator<=(T const& lhs, optional<U> const& rhs) noexcept
 
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator>(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs > rhs ) : false;
@@ -900,10 +897,8 @@ constexpr bool operator>(T const& lhs, optional<U> const& rhs) noexcept
 }
 
 template <typename T, typename U>
-    requires std::conjunction<
-            std::bool_constant<std::totally_ordered<T>>,
-            std::bool_constant<std::totally_ordered_with<U, T>>
-        >::value
+    requires std::conjunction<std::bool_constant<std::totally_ordered<T>>,
+                              std::bool_constant<std::totally_ordered_with<U, T>>>::value
 constexpr bool operator>=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs >= rhs ) : false;
@@ -934,6 +929,12 @@ template <typename T, typename... ARGS>
 auto make_optional(ARGS&& ...args) -> optional<T>
 {
     return optional<T>(in_place, std::forward<ARGS>(args)...);
+}
+
+template <typename T, template <typename...> class Tuple, typename... ARGS>
+auto make_optional(const Tuple<ARGS...>& tuple) -> optional<T>
+{
+    return optional<T>(from_tuple, tuple);
 }
 
 /** END **/
