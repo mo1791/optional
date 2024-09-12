@@ -55,6 +55,10 @@ inline constexpr struct nullopt_t {
 } nullopt{0};
 // END
 
+inline constexpr struct from_tuple_t {
+    constexpr from_tuple_t() noexcept = default;
+} from_tuple {};
+
 
 
 template <typename T> union storage_t
@@ -72,10 +76,9 @@ public: // constructors
     constexpr storage_t(trivially_init_t) noexcept(true) {}
 
 
-    template <typename U>
+    template <typename U> requires std::constructible_from<T, U>
     constexpr storage_t(U&& value)
         noexcept(std::is_nothrow_constructible<T, U>::value)
-        requires(std::is_constructible<T, U>::value)
     {
         std::construct_at(
             std::launder(reinterpret_cast<T*>(std::addressof(m_value))),
@@ -83,36 +86,46 @@ public: // constructors
         );
     }
 
-    template <typename... ARGS>
-    constexpr storage_t(in_place_t, &&... args)
+    template <typename... ARGS> requires std::constructible_from<T, ARGS...>
+    constexpr storage_t(in_place_t, ARGS&&... args)
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
-            requires(std::is_constructible<T, ARGS...>::value)
     {
         std::construct_at(
             std::launder(reinterpret_cast<T*>(std::addressof(m_value))),
             std::forward<ARGS>(args)...);
     }
 
+    template <template <typename...> class Tuple, typename... ARGS> requires std::constructible_from<T, ARGS...>
+    constexpr storage_t(from_tuple_t, const Tuple<ARGS...>& tuple)
+            noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
+    {
+        [&]<auto... Indx>(std::integer_sequence<std::size_t, Indx...>) {
+            ::new (static_cast<void*>(std::addressof(**this)) T{ std::get<Indx>(tuple)... };
+        }( std::make_integer_sequence<std::size_t, sizeof...(ARGS)>{});
+    }
+        
+
+
     template <typename U>
-    constexpr auto operator=(U&& value)
+    constexpr auto operator=(this storage_t& self, U&& value)
         noexcept(std::is_nothrow_assignable<T, U>::value) -> storage_t&
         requires(std::is_assignable<T, U>::value)
     {
-        **this = std::forward<U>(value);
-        return *this;
+        *self = std::forward<U>(value);
+        return self;
     }
 
 
 public: // Access the contained value 
 
-    auto operator*() const noexcept -> const T&
+    auto operator*(this const storage_t& self) noexcept -> const T&
     {
-        return *std::launder(reinterpret_cast<const T*>(std::addressof(m_value)));
+        return *std::launder(reinterpret_cast<const T*>(std::addressof(self.m_value)));
     }
     
-    auto operator*() noexcept -> T&
+    auto operator*(this storage_t& self) noexcept -> T&
     {
-        return *std::launder(reinterpret_cast<T*>(std::addressof(m_value)));
+        return *std::launder(reinterpret_cast<T*>(std::addressof(self.m_value)));
     }
 
 public: // ddestructors
@@ -160,10 +173,8 @@ public:
     // Constructs an optional object that contains a value
     // initialized as if direct-initializing (but not direct-list-initializing) an object of type T
     // with the expression std::forward<U>(value). 
-    template <typename U>
+    template <typename U> requires std::constructible_from<T, U>
     constexpr optional(U&& value) noexcept(std::is_nothrow_constructible<T, U>::value)
-            requires(std::conjunction<std::is_constructible<T, U>,
-                                      std::is_convertible<U, T>>::value)
         : m_engaged(true)
         , m_store(std::forward<U>(value))
     {
@@ -181,12 +192,22 @@ public:
     // Constructs an optional object that contains a value
     // initialized as if direct-initializing (but not direct-list-initializing) an object of type T
     // from the arguments std::forward<Args>(args)...
-    template <typename... ARGS>
-    constexpr optional(in_place_t, ARGS&&... args)
+    template <typename... ARGS> requires std::constructible_from<T, ARGS...>
+    constexpr optional(in_place_t indicator, ARGS&&... args)
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
-            requires(std::is_constructible<T, ARGS...>::value)
         : m_engaged(true)
-        , m_store(in_place, std::forward<ARGS>(args)...)
+        , m_store(indicator, std::forward<ARGS>(args)...)
+    {
+    }
+    
+    // Constructs an optional object that contains a value
+    // initialized as if direct-initializing (but not direct-list-initializing) an object of type T
+    // from tuple
+    template <template <typename...> class Tuple, typename... ARGS> requires std::constructible_from<T, ARGS...>::value)
+    constexpr optional(from_tuple_t indicator, const Tuple<ARGS...>& tuple)
+            noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
+        : m_engaged(true)
+        , m_store(indicator, tuple)
     {
     }
 
@@ -205,9 +226,9 @@ public:
                                   std::negation<std::is_trivially_copy_constructible<T>>>::value)
         : optional()
     {
-        if (other.m_engaged) {
-            std::construct_at(std::addressof(*m_store), *other);
-            m_engaged = true;
+        if ( bool(other) ) {
+            std::construct_at(std::addressof(**this), *other);
+            this->m_engaged = true;
         }
     }
 
@@ -225,9 +246,9 @@ public:
                                   std::negation<std::is_trivially_move_constructible<T>>>::value)
         : optional()
     {
-        if (other.m_engaged) {
-            std::construct_at(std::addressof(*m_store), std::move(*other));
-            m_engaged = true;
+        if ( bool(other) ) {
+            std::construct_at(std::addressof(**this), std::move(*other));
+            this->m_engaged = true;
         }
     }
 
@@ -239,9 +260,9 @@ public:
                                   std::is_constructible<T, const U&>>::value)
         : optional()
     {
-        if (other.m_engaged) {
-            std::construct_at(std::addressof(*m_store), *other);
-            m_engaged = true;
+        if ( bool(other) ) {
+            std::construct_at(std::addressof(**this), *other);
+            this->m_engaged = true;
         }
     }
 
@@ -253,19 +274,19 @@ public:
                                   std::is_constructible<T, U &&>>::value)
         : optional()
     {
-        if (other.m_engaged) {
-            std::construct_at(std::addressof(*m_store), std::move(*other));
-            m_engaged = true;
+        if ( bool(other) ) {
+            std::construct_at(std::addressof(**this), std::move(*other));
+            this->m_engaged = true;
         }
     }
 
 public:
     // the contained value is destroyed by calling its destructor
     // if *this contains a value before the call
-    constexpr auto operator=(nullopt_t) noexcept(true) -> optional&
+    constexpr auto operator=(this optional& self, nullopt_t) noexcept(true) -> optional&
     {
-        reset();
-        return *this;
+        self.reset();
+        return self;
     }
 
     // Assigns the state of other to *this ( copy )
@@ -278,27 +299,25 @@ public:
     = default;
 
     // copy assigns the state of other to *this
-    constexpr auto operator=(const optional& rhs)
+    constexpr auto operator=(this optional& self, const optional& rhs)
         noexcept(std::conjunction<std::is_nothrow_copy_assignable<T>,
                                   std::is_nothrow_copy_constructible<T>>::value) -> optional&
         requires(std::conjunction<std::is_copy_assignable<T>,
                                   std::is_copy_constructible<T>,
                                   std::negation<std::is_trivially_copy_assignable<T>>>::value)
     {
-        if (bool(rhs))
+        if ( bool(rhs) )
         {
-            if (m_engaged) {
-                m_store = *rhs;
-            }
+            if ( bool(self) ) { *self = *rhs; }
             else {
-                std::construct_at(std::addressof(*m_store), *rhs);
-                m_engaged = true;
+                std::construct_at(std::addressof(*self), *rhs);
+                self.m_engaged = true;
             }
         }
         else {
-            if (m_engaged) reset();
+            if ( bool(self) ) { self.reset(); }
         }
-        return *this;
+        return self;
     }
 
     // move assigns the state of other to *this
@@ -312,213 +331,195 @@ public:
 
 
     // Assigns the state of other to *this ( move )
-    constexpr auto operator=(optional&& rhs)
+    constexpr auto operator=(this optional& self, optional&& rhs)
         noexcept(std::conjunction<std::is_nothrow_move_assignable<T>,
                                   std::is_nothrow_move_constructible<T>>::value) -> optional&
         requires(std::conjunction<std::is_move_assignable<T>,
                                   std::is_move_constructible<T>,
                                   std::negation<std::is_trivially_move_assignable<T>>>::value)
     {
-        if (bool(rhs))
+        if ( bool(rhs) )
         {
-            if (m_engaged) {
-                m_store = std::move(*rhs);
-            }
+            if ( bool(self) ) { *self = std::move(*rhs); }
             else {
-                std::construct_at(std::addressof(*m_store), std::move(*rhs));
-                m_engaged = true;
+                std::construct_at(std::addressof(*self), std::move(*rhs));
+                self.m_engaged = true;
             }
         }
         else {
-            if (m_engaged) reset();
+            if ( bool(self) )  { self.reset(); }
         }
 
-        return *this;
+        return self;
     }
 
     // Converting copy assignment ( Coercion by Member Template )
     template <typename U>
-    constexpr auto operator=(const optional<U>& rhs)
+    constexpr auto operator=(this optional& self, const optional<U>& rhs)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, const U&>,
                                   std::is_nothrow_constructible<T, const U&>>::value) -> optional&
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_assignable<T, const U&>,
                                   std::is_constructible<T, const U&>>::value)
     {
-        if (bool(rhs))
+        if ( bool(rhs) )
         {
-            if (m_engaged) {
-                m_store = *rhs;
-            }
+            if ( bool(self) ) { *self = *rhs; }
             else {
-                std::construct_at(std::addressof(*m_store), *rhs);
-                m_engaged = true;
+                std::construct_at(std::addressof(*self), *rhs);
+                self.m_engaged = true;
             }
         }
         else {
-            if (m_engaged) reset();
+            if ( bool(self) ) { self.reset(); }
         }
-        return *this;
+        return self;
     }
 
     // Converting move assignment ( Coercion by Member Template )
     template <typename U>
-    constexpr auto operator=(optional<U>&& rhs)
+    constexpr auto operator=(this optional& self, optional<U>&& rhs)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, U&&>,
                                   std::is_nothrow_constructible<T, U&&>>::value) -> optional&
         requires(std::conjunction<detail::is_not_optional<U>,
                                   std::is_assignable<T, U &&>,
                                   std::is_constructible<T, U &&>>::value)
     {
-        if (bool(rhs))
+        if ( bool(rhs) )
         {
-            if (m_engaged) {
-                m_store = std::move(*rhs);
-            }
+            if ( bool(self) ) { *self = std::move(*rhs); }
             else {
-                std::construct_at(std::addressof(*m_store), std::move(*rhs));
-                m_engaged = true;
+                std::construct_at(std::addressof(*self), std::move(*rhs));
+                self.m_engaged = true;
             }
         }
         else {
-            if (m_engaged) reset();
+            if ( bool(self) )  { self.reset(); }
         }
 
-        return *this;
+        return self;
     }
 
     // Perfect-forwarded assignment
     template <typename U>
-    constexpr auto operator=(U&& value)
+    constexpr auto operator=(this optional& self, U&& value)
         noexcept(std::conjunction<std::is_nothrow_assignable<T, U&&>,
                                   std::is_nothrow_constructible<T, U&&>>::value) -> optional &
         requires(std::conjunction<std::is_assignable<T, U&&>,
                                   std::is_constructible<T, U&&>>::value)
     {
-        if ( m_engaged )
-        {
-            m_store = std::forward<U>(value);
-        }
+        if ( bool(self) ) { *self = std::forward<U>(value); }
         else {
-            std::construct_at(std::addressof(*m_store), std::forward<U>(value));
-            m_engaged = true;
+            std::construct_at(std::addressof(*self), std::forward<U>(value));
+            self.m_engaged = true;
         }
-        return *this;
+        return self;
     }
 
 
 public: // Access contained value
 
-    auto operator*() const noexcept(true) -> const T&
+    auto operator*(this const optional& self) noexcept(true) -> const T&
     {
-        assert(m_engaged && "Dereferencing disengaged optional");
-        return *m_store;
+        assert( boo(self) && "Dereferencing disengaged optional");
+        return *self.m_store;
     }
     
-    auto operator*() noexcept(true) -> T&
+    auto operator*(this optional& self) noexcept(true) -> T&
     {
-        assert(m_engaged && "Dereferencing disengaged optional");
-        return *m_store;
+        assert( bool(self) && "Dereferencing disengaged optional");
+        return *self.m_store;
     }
 
-    auto operator->() const noexcept(true) -> const T*
+    auto operator->(this const optional& self) noexcept(true) -> const T*
     {
-        assert(m_engaged && "Accessing disengaged optional");
-        return std::addressof(*m_store);
+        assert( bool(self) && "Accessing disengaged optional");
+        return std::addressof(*self);
     }
     
-    auto operator->() noexcept(true) -> T*
+    auto operator->(this optional& self) noexcept(true) -> T*
     {
-        assert(m_engaged && "Accessing disengaged optional");
-        return std::addressof(*m_store);
+        assert( bool(self) && "Accessing disengaged optional");
+        return std::addressof(*self);
     }
 
 public: // checks whether the object contains a value 
 
-    constexpr operator bool() const noexcept(true) { return m_engaged; }
+    constexpr operator bool(this const optional& self) noexcept(true) { return self.m_engaged; }
 
-    constexpr bool has_value() const noexcept(true) { return m_engaged; }
+    constexpr bool has_value(this const optional& self) noexcept(true) { return self.m_engaged; }
 
 
 public:
 
     // Observer the contained value
-    auto value() const noexcept(false) -> const T&
+    auto value(this const optional& self) noexcept(false) -> const T&
     {
-        if ( bool(*this) )
-        {
-            return *m_store;
-        }
+        if ( bool(self) ) { return *self; }
+
         throw bad_optional_access{"no value engaged!"};
     }
     // Observer the contained value
-    auto value() noexcept(false) -> T&
+    auto value(this optional& self) noexcept(false) -> T&
     {
-        if ( bool(*this) )
-        {
-            *m_store;
-        }
+        if ( bool(self) ) { return *self; }
+
         throw bad_optional_access{"no value engaged!"};
     }
 
     // returns the contained value if available, another value otherwise 
-    template <typename U>
-    auto value_or(U&& value) const&  noexcept(std::is_nothrow_convertible<U, T>::value ) -> T
-        requires( std::is_convertible<U, T>::value )
+    template <typename U> requires std::convertible_to<U, T>
+    auto value_or(this const optional& self, U&& value) noexcept(std::is_nothrow_convertible<U, T>::value ) -> T
     {
-        if ( bool(*this) )
-        {
-            return *m_store;
-        }
+        if ( bool(self) ) { return *self; }
+
         return static_cast<T>(std::forward<U>(value));
     }
 
     // returns the contained value if available, another value otherwise 
-    template <typename U>
-    auto value_or(U&& value) && noexcept(std::is_nothrow_convertible<U, T>::value) -> T
-        requires( std::is_convertible<U, T>::value )
+    template <typename U> requires std::convertible_to<U, T>
+    auto value_or(this optional&& self, U&& value) noexcept(std::is_nothrow_convertible<U, T>::value) -> T
     {
-        if ( bool(*this) )
+        if ( bool(self) )
         {
-            return std::move( *static_cast<optional&>(*this).m_store);
+            return std::move( *static_cast<optional&>(self) );
         }
         return static_cast<T>(std::forward<U>(value));
     }
 
 public: 
     // assignment ( constructs the contained value in-place )
-    template <typename... ARGS>
-    void emplace(ARGS&& ...args) 
+    template <typename... ARGS> requires std::constructible_from<T, ARGS...>
+    void emplace(this optional& self, ARGS&& ...args) 
         noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
-        requires(std::is_constructible<T, ARGS...>::value)
     {
-        if ( m_engaged ) reset();
+        if ( bool(self) ) { self.reset(); }
 
-        std::construct_at(std::addressof(*m_store), std::forward<ARGS>(args)...);
-        m_engaged = true;
+        std::construct_at(std::addressof(*self), std::forward<ARGS>(args)...);
+        self.m_engaged = true;
     }
 
 public: 
     // Swap ( exchanges the contents )
-    void swap(optional& rhs) noexcept(std::is_nothrow_swappable<T>::value)
+    void swap(this optional& self, optional& rhs) noexcept(std::is_nothrow_swappable<T>::value)
         requires(std::is_swappable<T>::value)
     {
-        if ( m_engaged )
+        if ( bool(self) )
         {
-            if ( rhs.m_engaged ) {
-                std::swap( *m_store, *rhs );
+            if ( bool(rhs) ) {
+                std::swap( *self, *rhs );
             }
             else {
-                std::construct_at(std::addressof(*rhs), std::move(*m_store));
+                std::construct_at(std::addressof(*rhs), std::move(*self));
                 rhs.m_engaged = true;
 
-                reset();
+                self.reset();
             }
         }
         else {
-            if ( rhs.m_engaged ) {
-                std::construct_at(std::addressof(*m_store), std::move(*rhs));
-                m_engaged = true;
+            if ( bool(rhs) ) {
+                std::construct_at(std::addressof(*self), std::move(*rhs));
+                self.m_engaged = true;
 
                 rhs.reset();
             }
@@ -530,12 +531,12 @@ public:
 
 public:
     // destroys any contained value
-    void reset() noexcept(std::is_nothrow_destructible<T>::value)
+    void reset(this optional& self) noexcept(std::is_nothrow_destructible<T>::value)
     {
-        if (m_engaged)
-            std::destroy_at(std::addressof(*m_store));
-
-        m_engaged = false;
+        if ( bool(self) ) {
+            std::destroy_at(std::addressof(*self));
+            self.m_engaged = false;
+        }
     }
 
 
@@ -610,10 +611,10 @@ public: // copy constructor
 
 public: // assignment
 
-    constexpr auto operator=(const optional& rhs) noexcept(true) -> optional&
+    constexpr auto operator=(this optional& self, const optional& rhs) noexcept(true) -> optional&
     {
-        m_reference = rhs.m_reference;
-        return *this;
+        self.m_reference = rhs.m_reference;
+        return self;
     }
 
     auto operator=(optional&&) noexcept(true) = delete;
@@ -621,85 +622,78 @@ public: // assignment
 
 public: // Access the contained value
 
-    auto operator*() const noexcept(true) -> const T&
+    auto operator*(this const optional& self) noexcept(true) -> const T&
     {
-        assert(m_reference && "Dereferencing disengaged optional");
-        return *m_reference;
+        assert( bool(self) && "Dereferencing disengaged optional");
+        return *self.m_reference;
     }
-    auto operator*() noexcept(true) -> T&
+    auto operator*(this optional& self) noexcept(true) -> T&
     {
-        assert(m_reference && "Dereferencing disengaged optional");
-        return *m_reference;
+        assert( bool(self) && "Dereferencing disengaged optional");
+        return *self.m_reference;
     }
 
-    auto operator->() const noexcept(true) -> const T*
+    auto operator->(this const optional& self) noexcept(true) -> const T*
     {
-        assert(m_reference && "Accessing disengaged optional");
-        return m_reference;
+        assert( bool(self) && "Accessing disengaged optional");
+        return self.m_reference;
     }
-    auto operator->() noexcept(true) -> T*
+    auto operator->(this optional& self) noexcept(true) -> T*
     {
-        assert(m_reference && "Accessing disengaged optional");
-        return m_reference;
+        assert( bool(self) && "Accessing disengaged optional");
+        return self.m_reference;
     }
 
 public: // Observer the contained value
 
-    auto value() const noexcept(false) -> const T&
+    auto value(this const optional& self) noexcept(false) -> const T&
     {
-        if ( bool(*this) )
-        {
-            return *m_reference;
-        }
+        if ( bool( self ) ) { return *self; }
+
         throw bad_optional_access{"no value engaged!"};
     }
-    auto value() noexcept(false) -> T&
+    auto value(this optional& self) noexcept(false) -> T&
     {
-        if ( bool(*this) )
-        {
-            return *m_reference
-        }    
+        if ( bool( self ) ) { return *self; }
+
         throw bad_optional_access{"no value engaged!"};
     }
 
-    template <typename U>
-    auto value_or(U& value) const 
+    template <typename U> requires std::convertible_to<U, T>
+    auto value_or(this const optional& self, U& value)
         noexcept(std::is_nothrow_convertible<U, T>::value) -> typename std::decay<T>::type
-        requires(std::is_convertible<U, T>::value)
     {
-        if ( bool(*this) )
-        {
-            return *m_reference
-        }
+        if ( bool(self) ) { return *self; }
+
         return static_cast<typename std::decay<T>::type>(std::forward<U>(value));
     }
 
 public: // assignment
-    auto emplace(T& value) noexcept -> optional &
+    auto emplace(this optional& self, T& value) noexcept -> optional &
     {
-        m_reference = std::addressof(value);
+        *self = std::addressof(value);
 
-        return *this;
+        return self;
     }
 
     auto emplace(T&&) noexcept -> optional & = delete;
 
 
 public: // Swap ( exchanges the contents )
-    void swap(optional& rhs) noexcept( true )
+    void swap(this optional& self, optional& rhs) noexcept( true )
     {
-        std::swap( rhs.m_reference, m_reference );
+        std::swap( *rhs, *self );
     }
 
 
 public: // checks whether the object contains a value
 
-    constexpr operator bool() const noexcept(true) { return ( m_reference != nullptr ); }
+    constexpr operator bool(this const optional& self) noexcept(true) { return ( self.m_reference != nullptr ); }
 
-    constexpr bool has_value() const noexcept(true) { return ( m_reference != nullptr ); }
+    constexpr bool has_value(this const optional& self) noexcept(true) { return ( self.m_reference != nullptr ); }
 
 public:
-    void reset() noexcept(true) { m_reference = nullptr; }
+    void reset(this optional& self) noexcept(true) { self.m_reference = nullptr; }
 
 public:
     constexpr ~optional() noexcept(true) = default;
@@ -718,39 +712,63 @@ class optional<T&&>
 
 /****** Relational operators ******/
 
-template <std::equality_comparable T, std::equality_comparable_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::equality_comparable<T>>,
+            std::bool_constant<std::equality_comparable_with<U, T>>
+        >::value
 constexpr bool operator==(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs == *rhs ) : false;
 }
 
-template <std::equality_comparable T, std::equality_comparable_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::equality_comparable<T>>,
+            std::bool_constant<std::equality_comparable_with<U, T>>
+        >::value
 constexpr bool operator!=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs != *rhs ) : false;
 }
 
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator<(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs < *rhs ) : false;
 }
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator<=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs <= *rhs ) : false;
 }
 
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator>(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs > *rhs ) : false;
 }
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator>=(optional<T> const& lhs, optional<U> const& rhs) noexcept
 {
     return ( bool(rhs) && bool(lhs) ) ? ( *lhs >= *rhs ) : false;
@@ -800,7 +818,11 @@ constexpr bool operator>=(nullopt_t, optional<T> const& rhs) noexcept { return n
 
 /** Comparison with  U **/
 
-template <std::equality_comparable T, std::equality_comparable_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::equality_comparable<T>>,
+            std::bool_constant<std::equality_comparable_with<U, T>>
+        >::value
 constexpr bool operator==(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs == rhs ) : false;
@@ -812,7 +834,11 @@ constexpr bool operator==(T const& lhs, optional<U> const& rhs) noexcept
     return bool(rhs) ? ( lhs == *rhs ) : false;
 }
 
-template <std::equality_comparable T, std::equality_comparable_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::equality_comparable<T>>,
+            std::bool_constant<std::equality_comparable_with<U, T>>
+        >::value
 constexpr bool operator!=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs != rhs ) : false;
@@ -824,7 +850,11 @@ constexpr bool operator!=(T const& lhs, optional<U> const& rhs) noexcept
     return bool(rhs) ? ( lhs != *rhs ) : false;
 }
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator<(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs < rhs ) : false;
@@ -836,7 +866,11 @@ constexpr bool operator<(T const& lhs, optional<U> const& rhs) noexcept
     return bool(rhs) ? ( lhs < *rhs ) : false;
 }
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator<=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs <= rhs ) : false;
@@ -849,7 +883,11 @@ constexpr bool operator<=(T const& lhs, optional<U> const& rhs) noexcept
 }
 
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator>(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs > rhs ) : false;
@@ -861,7 +899,11 @@ constexpr bool operator>(T const& lhs, optional<U> const& rhs) noexcept
     return bool(rhs) ? ( lhs > *rhs ) : false;
 }
 
-template <std::totally_ordered T, std::totally_ordered_with<T> U>
+template <typename T, typename U>
+    requires std::conjunction<
+            std::bool_constant<std::totally_ordered<T>>,
+            std::bool_constant<std::totally_ordered_with<U, T>>
+        >::value
 constexpr bool operator>=(optional<T> const& lhs, typename std::type_identity<U>::type const& rhs) noexcept
 {
     return bool(lhs) ? ( *lhs >= rhs ) : false;
