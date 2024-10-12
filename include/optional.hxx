@@ -8,9 +8,12 @@
 #define _OPTIONAL_HXX_
 
 #include <iostream>
+#include <memory>
 #include <type_traits>
 #include <utility>
 #include <cassert>
+
+
 
 template <typename> class optional;
 
@@ -38,14 +41,14 @@ public:
 
 // trivially construction 
 inline constexpr struct trivially_init_t { 
-    constexpr trivially_init_t() noexcept = default;
-} trivially_init{};
+    constexpr trivially_init_t(int) noexcept {}
+} trivially_init{0};
 // END 
 
 // In-place construction 
 inline constexpr struct in_place_t {
-    constexpr in_place_t() noexcept = default;
-} in_place{};
+    constexpr in_place_t(int) noexcept {}
+} in_place{0};
 // END
 
 
@@ -56,8 +59,8 @@ inline constexpr struct nullopt_t {
 // END
 
 inline constexpr struct from_tuple_t {
-    constexpr from_tuple_t() noexcept = default;
-} from_tuple {};
+    constexpr from_tuple_t(int) noexcept {}
+} from_tuple {0};
 
 
 
@@ -100,7 +103,7 @@ public: // constructors
             noexcept(std::is_nothrow_constructible<T, ARGS...>::value)
     {
         [&]<auto... Indx>(std::integer_sequence<std::size_t, Indx...>) {
-            ::new (static_cast<void*>(std::addressof(**this))) T{ std::get<Indx>(tuple)... };
+            ::new ((void*) std::addressof(**this)) T{ std::get<Indx>(tuple)... };
         }( std::make_integer_sequence<std::size_t, sizeof...(ARGS)>{});
     }
         
@@ -135,7 +138,7 @@ public: // ddestructors
     = default;
 
     constexpr ~storage_t() noexcept(std::is_nothrow_destructible<T>::value)
-        requires(std::negation<std::is_trivially_destructible<T>>::value)
+        requires(!std::is_trivially_destructible<T>::value)
     {
     }
 
@@ -230,7 +233,7 @@ public:
     {
         if ( bool(other) )
         {
-            std::construct_at(std::addressof(**this), *other);
+            std::construct_at(std::to_address(*this), *other);
             this->m_engaged = true;
         }
     }
@@ -251,7 +254,7 @@ public:
     {
         if ( bool(other) )
         {
-            std::construct_at(std::addressof(**this), std::move(*other));
+            std::construct_at(std::to_address(*this), std::move(*other));
             this->m_engaged = true;
         }
     }
@@ -266,7 +269,7 @@ public:
     {
         if ( bool(other) )
         {
-            std::construct_at(std::addressof(**this), *other);
+            std::construct_at(std::to_address(*this), *other);
             this->m_engaged = true;
         }
     }
@@ -281,7 +284,7 @@ public:
     {
         if ( bool(other) )
         {
-            std::construct_at(std::addressof(**this), std::move(*other));
+            std::construct_at(std::to_address(*this), std::move(*other));
             this->m_engaged = true;
         }
     }
@@ -317,7 +320,7 @@ public:
             if ( bool(self) ) { *self = *rhs; }
             else
             {
-                std::construct_at(std::addressof(*self), *rhs);
+                std::construct_at(std::to_address(self), *rhs);
                 self.m_engaged = true;
             }
         }
@@ -351,7 +354,7 @@ public:
             if ( bool(self) ) { *self = std::move(*rhs); }
             else
             {
-                std::construct_at(std::addressof(*self), std::move(*rhs));
+                std::construct_at(std::to_address(self), std::move(*rhs));
                 self.m_engaged = true;
             }
         }
@@ -377,7 +380,7 @@ public:
             if ( bool(self) ) { *self = *rhs; }
             else
             {
-                std::construct_at(std::addressof(*self), *rhs);
+                std::construct_at(std::to_address(self), *rhs);
                 self.m_engaged = true;
             }
         }
@@ -402,7 +405,7 @@ public:
             if ( bool(self) ) { *self = std::move(*rhs); }
             else
             {
-                std::construct_at(std::addressof(*self), std::move(*rhs));
+                std::construct_at(std::to_address(self), std::move(*rhs));
                 self.m_engaged = true;
             }
         }
@@ -424,7 +427,7 @@ public:
         if ( bool(self) ) { *self = std::forward<U>(value); }
         else
         {
-            std::construct_at(std::addressof(*self), std::forward<U>(value));
+            std::construct_at(std::to_address(self), std::forward<U>(value));
             self.m_engaged = true;
         }
         return self;
@@ -509,7 +512,7 @@ public:
     {
         if ( bool(self) ) { self.reset(); }
 
-        std::construct_at(std::addressof(*self), std::forward<ARGS>(args)...);
+        std::construct_at(std::to_address(self), std::forward<ARGS>(args)...);
         self.m_engaged = true;
     }
 
@@ -526,7 +529,7 @@ public:
             }
             else
             {
-                std::construct_at(std::addressof(*rhs), std::move(*self));
+                std::construct_at(std::to_address(rhs), std::move(*self));
                 rhs.m_engaged = true;
 
                 self.reset();
@@ -535,7 +538,7 @@ public:
         else {
             if ( bool(rhs) )
             {
-                std::construct_at(std::addressof(*self), std::move(*rhs));
+                std::construct_at(std::to_address(self), std::move(*rhs));
                 self.m_engaged = true;
 
                 rhs.reset();
@@ -553,7 +556,7 @@ public:
     {
         if ( bool(self) )
         {
-            std::destroy_at(std::addressof(*self));
+            std::destroy_at(std::to_address(self));
             self.m_engaged = false;
         }
     }
