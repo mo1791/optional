@@ -71,11 +71,10 @@ private:
 
 public: //  type alias
     using value_type = T;
-    using const_value_type = typename std::add_const<T>::type;
-    using reference        = typename std::add_lvalue_reference<T>::type;
-    using const_reference  = typename std::add_lvalue_reference<const_value_type>::type;
-    using pointer          = typename std::add_pointer<T>::type;
-    using const_pointer    = typename std::add_pointer<const_value_type>::type;
+    using reference        = T&;
+    using const_reference  = const T&;
+    using pointer          = T*;
+    using const_pointer    = const T*;
 
 public:
     // Constructs an object that does not contain a value
@@ -573,10 +572,8 @@ template <typename T> union optional<T>::storage_t
 
  public: // type alias
     using value_type = T;
-    using const_value_type = typename std::add_const<T>::type;
-    using reference        = typename std::add_lvalue_reference<T>::type;
-    using const_reference  =
-        typename std::add_lvalue_reference<const_value_type>::type;
+    using reference        = T&;
+    using const_reference  = const T&;
 
 
 public: // constructors
@@ -658,11 +655,10 @@ class optional<T&>
     static_assert(!std::same_as<std::decay_t<T>, in_place_t>, "bad T");
 
 private: // type alias
-    using const_t = typename std::add_const<T>::type;
-    using pointer = typename std::add_pointer<T>::type;
-    using const_pointer   = typename std::add_pointer<const_t>::type;
-    using reference       = typename std::add_lvalue_reference<T>::type;
-    using const_reference = typename std::add_lvalue_reference<const_t>::type;
+    using pointer = T*;
+    using const_pointer   = const T*;
+    using reference       = T&;
+    using const_reference = const T&;
 
   public: // constructors
     constexpr optional() noexcept = default;
@@ -804,7 +800,7 @@ public:
     constexpr ~optional () noexcept = default;
 
 private:
-    typename std::add_pointer<T>::type m_reference = nullptr;
+    pointer m_reference = nullptr;
 };
 
 
